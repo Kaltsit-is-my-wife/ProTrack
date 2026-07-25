@@ -1,0 +1,114 @@
+use std::path::Path;
+use tauri::Manager;
+
+use crate::models::directory::LogEntry;
+use crate::utils::logger::Level;
+
+// ============================================================
+// open_in_explorer — 跨平台在文件管理器中打开目录
+// ============================================================
+
+#[tauri::command]
+pub fn open_in_explorer(
+    path: String,
+    logger_state: tauri::State<'_, crate::utils::logger::Logger>,
+) -> Result<(), String> {
+    logger_state.write(
+        Level::Info,
+        "Explorer",
+        &format!("open_in_explorer | path: {}", path),
+    );
+    let path = Path::new(&path);
+
+    if !path.exists() {
+        logger_state.write(
+            Level::Warn,
+            "Explorer",
+            &format!("path not found: {}", path.display()),
+        );
+        return Err(format!("路径不存在: {}", path.display()));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let target = if path.is_file() {
+            format!("/select,{}", path.display())
+        } else {
+            path.display().to_string()
+        };
+        std::process::Command::new("explorer")
+            .arg(target)
+            .spawn()
+            .map_err(|e| format!("无法打开资源管理器: {}", e))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let target = if path.is_file() {
+            path.parent().unwrap_or(path)
+        } else {
+            path
+        };
+        std::process::Command::new("open")
+            .arg(target)
+            .spawn()
+            .map_err(|e| format!("无法打开 Finder: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let target = if path.is_file() {
+            path.parent().unwrap_or(path)
+        } else {
+            path
+        };
+        std::process::Command::new("xdg-open")
+            .arg(target)
+            .spawn()
+            .map_err(|e| format!("无法打开文件管理器: {}", e))?;
+    }
+
+    Ok(())
+}
+
+// ============================================================
+// log_message — 前端日志写入文件
+// ============================================================
+
+#[tauri::command]
+pub fn log_message(
+    entry: LogEntry,
+    logger_state: tauri::State<'_, crate::utils::logger::Logger>,
+) -> Result<(), String> {
+    let level = match entry.level.as_str() {
+        "debug" => Level::Debug,
+        "info" => Level::Info,
+        "warn" => Level::Warn,
+        "error" => Level::Error,
+        _ => Level::Info,
+    };
+    logger_state.write(level, &entry.source, &entry.message);
+    Ok(())
+}
+
+// ============================================================
+// get_data_dir — 返回应用数据目录（配置 + 日志存储位置）
+// ============================================================
+
+#[tauri::command]
+pub fn get_data_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
+    app_handle
+        .path()
+        .app_data_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| format!("无法获取应用数据目录: {}", e))
+}
+
+// ============================================================
+// greet（保留，用于测试 IPC 通道）
+// ============================================================
+
+#[tauri::command]
+pub fn greet(name: &str) -> String {
+    format!("Hello, {}! You've been greeted from Rust!", name)
+}
