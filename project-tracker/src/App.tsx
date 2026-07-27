@@ -1429,40 +1429,28 @@ function App() {
   }, [activeProjectId, setAiAnalysis, setAiLoading]);
 
   const handleAddProject = useCallback(async () => {
-    console.log("[DEBUG] handleAddProject called");
     try {
-      console.log("[DEBUG] calling open()...");
       const selected = await open({
         directory: true,
         multiple: false,
         title: "选择要追踪的项目目录",
       });
-      console.log("[DEBUG] open() returned:", selected);
 
       if (!selected) {
-        console.log("[DEBUG] user cancelled");
+        console.log("[Project] 用户取消添加");
         return;
       }
 
       const dirPath = selected as string;
       const name = getDirName(dirPath);
-      console.log("[DEBUG] selected path:", dirPath);
 
       // 用较大深度扫描，后续可通过 depth 选择器过滤显示
       const scanDepth = 5;
-      console.log("[DEBUG] scanning with depth:", scanDepth);
       const tree = await invoke<DirNode>("scan_directory", {
         path: dirPath,
         maxDepth: scanDepth,
       });
-      console.log(
-        "[DEBUG] scan done, root:",
-        tree.name,
-        "children:",
-        tree.children?.length ?? 0,
-      );
 
-      console.log("[DEBUG] calling addProject...");
       addProject({
         name,
         path: dirPath,
@@ -1470,18 +1458,10 @@ function App() {
         nextSteps: "",
         notes: "",
       });
-      console.log("[DEBUG] addProject returned");
 
       // 获取刚添加的 project id（addProject 在内部生成）
       const all = useAppStore.getState().projects;
-      console.log(
-        "[DEBUG] store has",
-        all.length,
-        "projects:",
-        all.map((p) => p.name),
-      );
       const latest = all[all.length - 1];
-      console.log("[DEBUG] latest:", latest?.id, latest?.name);
 
       if (latest) {
         // 首次扫描时运行过滤规则，初始化 hiddenFiles（只做这一次，后续由用户手动管理）
@@ -1503,23 +1483,24 @@ function App() {
           setHiddenFiles(initHidden);
         }
 
-        console.log("[DEBUG] setting projectTree and activeProject...");
         setProjectTree(latest.id, tree);
         setActiveProject(latest.id);
         invoke("ensure_project_tracker_dir", { projectPath: dirPath }).catch(
           () => {},
         );
         console.log(
-          "[DEBUG] project added, id:",
+          "[Project] 已添加 | id:",
           latest.id,
-          "activeProjectId now:",
-          useAppStore.getState().activeProjectId,
+          "| name:",
+          name,
+          "| path:",
+          dirPath,
         );
       } else {
-        console.error("[DEBUG] latest is undefined! all:", all);
+        console.error("[Project] 添加失败：无法获取最新项目 | all:", all);
       }
     } catch (err) {
-      console.error("[DEBUG] add project failed:", err);
+      console.error("[Project] 添加项目失败:", err);
     }
   }, [addProject, setProjectTree, setActiveProject]);
 
@@ -1694,9 +1675,9 @@ function App() {
     const latestHidden = useAppStore.getState().hiddenFiles;
 
     console.log(
-      "[DEBUG] layoutMindMap starting, lock:",
+      "[Layout] ELK 布局开始 | lock:",
       lock,
-      "maxDepth:",
+      "| maxDepth:",
       maxDepth,
     );
     layoutMindMap(tree, {
@@ -1707,15 +1688,15 @@ function App() {
       .then(({ nodes: newNodes, edges: newEdges }) => {
         if (cancelled || lock !== layoutLock.current) {
           console.log(
-            "[DEBUG] layoutMindMap stale result, lock:",
+            "[Layout] ELK 结果过期 | lock:",
             lock,
-            "current:",
+            "| current:",
             layoutLock.current,
           );
           return;
         }
         console.log(
-          "[DEBUG] layoutMindMap done, nodes:",
+          "[Layout] ELK 布局完成 | nodes:",
           newNodes.length,
           "edges:",
           newEdges.length,
@@ -1823,7 +1804,7 @@ function App() {
         }
       })
       .catch((err) => {
-        console.error("[DEBUG] layoutMindMap failed:", err);
+        console.error("[Layout] ELK 布局失败:", err);
       });
 
     return () => {

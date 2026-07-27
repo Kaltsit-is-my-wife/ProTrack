@@ -1,7 +1,7 @@
 # Project Tracker — 项目综合报告
 
 > 撰写日期：2026-07-25  
-> 最后更新：2026-07-25  
+> 最后更新：2026-07-28  
 > 面向读者：后续开发者、维护者
 
 ---
@@ -54,7 +54,9 @@ project-tracker/
 │   │   ├── SettingsPage.tsx          # 设置页面（分类导航 + AI 提示词编辑）
 │   │   ├── ChatPanel.tsx             # AI 对话面板（流式聊天）
 │   │   ├── HiddenFilesDialog.tsx     # 隐藏文件管理对话框
-│   │   └── NodeContextMenu.tsx       # 思维导图节点右键菜单
+│   │   ├── NodeContextMenu.tsx       # 思维导图节点右键菜单
+│   │   ├── MarkdownRenderer.tsx      # Markdown → JSX 渲染器
+│   │   └── ErrorBoundary.tsx         # React 错误边界（防白屏）
 │   ├── lib/
 │   │   ├── ai.ts                     # AI 前端 API（分析 / 对话 / 流式）
 │   │   ├── persistence.ts            # 数据持久化（配置 / 业务 / 缓存分离）
@@ -66,7 +68,9 @@ project-tracker/
 │   ├── store/
 │   │   └── useAppStore.ts            # Zustand 全局状态
 │   ├── hooks/
-│   │   └── useTheme.ts              # 主题切换 hook
+│   │   ├── useTheme.ts              # 主题切换 hook
+│   │   ├── usePanelResize.ts        # 水平面板拖拽缩放
+│   │   └── useVerticalResize.ts     # 垂直面板拖拽缩放
 │   └── types/
 │       ├── directory.ts              # DirNode 类型
 │       └── project.ts               # Project 类型
@@ -212,6 +216,9 @@ React 组件 → invoke('command', {args}) → Tauri IPC
 | API Key 落盘加密（AES-256-GCM） | ✅ |
 | 日志日期轮转 | ✅ |
 | 旧格式自动迁移（app-state.json → 新结构） | ✅ |
+| ErrorBoundary 白屏防护（5 个边界） | ✅ |
+| GPL v3 开源许可 | ✅ |
+| TypeScript 严格模式零错误 | ✅ |
 
 ---
 
@@ -360,18 +367,30 @@ AiConfig::from_env_with(api_key, endpoint, model)
 | 语言切换 | 低 | 设置页"暂未开放"，发布前不做 |
 | `node_modules` 默认过滤 | 低 | 用户可手动隐藏 |
 
-### 7.2 代码质量问题
+### 7.2 近期已完成（07-25 → 07-28）
+
+| 项目 | 日期 | 说明 |
+|------|------|------|
+| Rust panic 消除 | 07-26 | 全仓 0 处裸 `unwrap()`/`expect()`，1 处改为 `if let Err` + `eprintln!` 优雅退出 |
+| `useProjectStats` 引用稳定性 | 07-26 | `EMPTY_STATS` 冻结常量 + `useShallow` + 拍平返回值，彻底消除不必要的重渲染 |
+| ErrorBoundary 防线 | 07-26 | 5 个独立边界包裹关键 UI 区域，单组件崩溃不再导致整页白屏 |
+| TypeScript 类型检查 | 07-26 | `npx tsc --noEmit` 零错误，零 `@ts-ignore`/`@ts-expect-error`/`as any` |
+| Git 管理规范化 | 07-27 | 双层仓库拓扑文档化，统一 .gitignore，CLAUDE.md 迁至外层 |
+| GPL v3 许可 | 07-27 | LICENSE 文件 + 36 个源文件头部声明 + README 许可章节 |
+| README 重写 | 07-27 | 从极简 → 痛点说明 + 五大功能分类 + 完整项目结构 |
+| CLAUDE.md 修复 | 07-27 | 内层内容迁入外层（恢复会话自动加载），追加 Git 管理约定
+
+### 7.3 代码质量问题
 
 | 问题 | 位置 | 影响 |
 |------|------|------|
-| `useProjectStats` 返回新对象引用 | `useAppStore.ts:372` | 与已修复的 `useAiHistory` 同款问题，暂未触发崩溃 |
 | `App.tsx` 过于庞大 | `src/App.tsx`（~2000 行） | 包含主布局+DetailPanel+10+子组件，应拆分 |
 | `ai_client.rs` 过长 | `src-tauri/src/services/ai_client.rs`（~1700 行） | 可拆分为 prompt.rs / chat.rs / analysis.rs |
 | 测试缺失 | 全局 | 无单元测试、无集成测试 |
 | 前端状态分散 | App.tsx 大量 useState + Zustand | 部分局部状态应迁入 store |
 | macOS/Linux 未测试 | 全局 | 仅在 Windows 11 上开发测试 |
 
-### 7.3 架构限制
+### 7.4 架构限制
 
 - **分析提示词 L2 仅支持核心分析**：文件整理方案使用独立硬编码提示词，未来可考虑支持 L2 自定义
 - **AI 模型兼容性**：依赖模型按 JSON 格式输出，部分小模型（如 flash 版本）可能不遵从
@@ -385,8 +404,8 @@ AiConfig::from_env_with(api_key, endpoint, model)
 
 1. **拆分 App.tsx** — 将 AiAnalysisContent, AiResultCard, CoreResultCard 等提取为独立组件文件
 2. **拆分 ai_client.rs** — 按功能拆为 ai_chat.rs, ai_analysis.rs, ai_prompt.rs
-3. **修复 useProjectStats** — 添加 `EMPTY_STATS` 常量，避免引用抖动
-4. **添加错误边界** — 在 AI 分析面板外包裹 ErrorBoundary
+3. ~~修复 useProjectStats~~ ✅ 已完成 — 添加了 `EMPTY_STATS` 常量 + `useShallow` + 拍平原语字段，消除引用抖动
+4. ~~添加错误边界~~ ✅ 已完成 — 5 个独立 ErrorBoundary 包裹 AI 面板、思维导图、对话、项目列表、设置页
 5. **AI 模型预设列表** — 设置页模型输入改为带建议的下拉框
 
 ### 8.2 中期（功能和覆盖）
