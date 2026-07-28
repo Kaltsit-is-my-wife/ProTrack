@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Copy, RefreshCw } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, type ChatMessage } from "@/store/useAppStore";
 import { chatWithAiStream } from "@/lib/ai";
@@ -115,14 +115,13 @@ export function ChatPanel() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [expanded]);
 
-  const handleSend = useCallback(async () => {
-    const value = textareaRef.current?.value.trim();
-    if (!value || !activeProjectId || !project || !tree || busy) return;
+  const doSend = useCallback(async (text: string) => {
+    if (!text || !activeProjectId || !project || !tree || busy) return;
 
     // 1. 添加用户消息
     const userMsg: ChatMessage = {
       id: nextId(),
-      text: value,
+      text,
       role: "user",
       time: Date.now(),
     };
@@ -130,14 +129,7 @@ export function ChatPanel() {
     invoke("ensure_project_tracker_dir", { projectPath: project.path }).catch(
       () => {},
     );
-    console.log("[Chat] 发送消息:", value);
-
-    // 清空 + 重置高度
-    if (textareaRef.current) {
-      textareaRef.current.value = "";
-      textareaRef.current.style.height = "auto";
-    }
-    textareaRef.current?.focus();
+    console.log("[Chat] 发送消息:", text);
 
     // 2. 创建空占位消息 + 流式获取 AI 回复
     const placeholderId = nextId();
@@ -161,7 +153,7 @@ export function ChatPanel() {
     chatWithAiStream(
       project,
       tree,
-      value,
+      text,
       history,
       hiddenFiles,
       useAppStore.getState().settings.dataPath,
@@ -211,7 +203,49 @@ export function ChatPanel() {
         console.error("[Chat] AI 流式请求失败:", error);
       },
     );
-  }, [activeProjectId, project, tree, hiddenFiles, addChatMessage]);
+  }, [activeProjectId, project, tree, hiddenFiles, addChatMessage, busy]);
+
+  const handleSend = useCallback(async () => {
+    const value = textareaRef.current?.value.trim();
+    if (!value) return;
+    // 清空 + 重置高度
+    if (textareaRef.current) {
+      textareaRef.current.value = "";
+      textareaRef.current.style.height = "auto";
+    }
+    textareaRef.current?.focus();
+    await doSend(value);
+  }, [doSend]);
+
+  const handleCopy = useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // 降级方案
+      const el = document.createElement("textarea");
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+    }
+  }, []);
+
+  const handleRegenerate = useCallback(
+    (aiIndex: number) => {
+      // 找到这条 AI 消息之前的最后一条用户消息
+      const msgs = useAppStore.getState().chatMessages[activeProjectId ?? ""] ?? [];
+      let userText = "";
+      for (let i = aiIndex - 1; i >= 0; i--) {
+        if (msgs[i]?.role === "user") {
+          userText = msgs[i].text;
+          break;
+        }
+      }
+      if (userText) doSend(userText);
+    },
+    [activeProjectId, doSend],
+  );
 
   const handleBallClick = useCallback(() => {
     if (expanded) {
@@ -262,7 +296,7 @@ export function ChatPanel() {
         ) : (
           messages
             .filter((msg) => !(typing && msg.role === "ai" && !msg.text))
-            .map((msg) => (
+            .map((msg, i) => (
               <div
                 key={msg.id}
                 className={`chat-bubble-row ${msg.role === "user" ? "is-user" : "is-ai"}`}
@@ -272,6 +306,27 @@ export function ChatPanel() {
                     <MarkdownRenderer content={msg.text} />
                   ) : (
                     <span className="chat-bubble-text">{msg.text}</span>
+                  )}
+                  {msg.role === "ai" && msg.text && (
+                    <div className="chat-bubble-actions">
+                      <button
+                        type="button"
+                        className="chat-bubble-action-btn"
+                        title="复制"
+                        onClick={() => handleCopy(msg.text)}
+                      >
+                        <Copy className="size-3" />
+                      </button>
+                      <button
+                        type="button"
+                        className="chat-bubble-action-btn"
+                        title="重新生成"
+                        onClick={() => handleRegenerate(i)}
+                        disabled={busy}
+                      >
+                        <RefreshCw className="size-3" />
+                      </button>
+                    </div>
                   )}
                 </div>
                 <span className="chat-bubble-time">

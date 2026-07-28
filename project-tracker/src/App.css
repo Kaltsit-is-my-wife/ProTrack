@@ -1737,6 +1737,7 @@
 /* ---- 气泡 ---- */
 
 .chat-bubble {
+  position: relative;
   padding: 8px 12px;
   border-radius: 14px;
   font-size: 12.5px;
@@ -1946,6 +1947,44 @@
   margin-top: 2px;
   padding: 0 4px;
   user-select: none;
+}
+
+.chat-bubble-actions {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.chat-bubble:hover .chat-bubble-actions {
+  opacity: 1;
+}
+
+.chat-bubble-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: none;
+  background: hsl(var(--card));
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.chat-bubble-action-btn:hover:not(:disabled) {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+
+.chat-bubble-action-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* ============================================
