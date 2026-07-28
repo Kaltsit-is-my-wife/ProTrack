@@ -1254,7 +1254,7 @@ async fn call_ai_for_analysis(
     }
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(150))
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
@@ -1381,7 +1381,7 @@ async fn call_ai_for_analysis(
         Err(e) => {
             logger.write(Level::Error, tag, &format!("request failed | {}", e));
             let msg = if e.is_timeout() {
-                "AI 分析超时（60s），请稍后重试".to_string()
+                "AI 分析超时（150s），请稍后重试".to_string()
             } else if e.is_connect() {
                 "无法连接到 AI 服务，请检查网络".to_string()
             } else {

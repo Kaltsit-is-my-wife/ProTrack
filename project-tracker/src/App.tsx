@@ -217,9 +217,11 @@ function MindMapNode({ data, selected }: NodeProps<MindMapNodeData>) {
 function DetailPanel({
   corePartial,
   fileOrgPartial,
+  analysisElapsed,
 }: {
   corePartial: AnalyzeCoreResponse | null;
   fileOrgPartial: string | null;
+  analysisElapsed: number;
 }) {
   const activeProject = useActiveProject();
   const updateProject = useAppStore((s) => s.updateProject);
@@ -497,6 +499,7 @@ function DetailPanel({
               <AiAnalysisContent
                 corePartial={corePartial}
                 fileOrgPartial={fileOrgPartial}
+                analysisElapsed={analysisElapsed}
               />
             </ErrorBoundary>
           )}
@@ -531,9 +534,11 @@ function DetailPanel({
 function AiAnalysisContent({
   corePartial,
   fileOrgPartial,
+  analysisElapsed,
 }: {
   corePartial: AnalyzeCoreResponse | null;
   fileOrgPartial: string | null;
+  analysisElapsed: number;
 }) {
   const history = useAiHistory();
   const aiHistoryMode = useAppStore((s) => s.settings.aiHistoryMode);
@@ -565,6 +570,9 @@ function AiAnalysisContent({
             <p className="text-xs text-muted-foreground mt-2">
               AI 正在分析项目概况、建议、洞察与风险...
             </p>
+            <p className="text-[10px] text-muted-foreground/60 mt-1">
+              已耗时 {analysisElapsed}s / 150s
+            </p>
           </div>
         )}
 
@@ -581,6 +589,9 @@ function AiAnalysisContent({
             <Sparkles className="size-5 animate-spin text-muted-foreground" />
             <p className="text-xs text-muted-foreground mt-2">
               AI 正在生成文件整理方案...
+            </p>
+            <p className="text-[10px] text-muted-foreground/60 mt-1">
+              已耗时 {analysisElapsed}s / 150s
             </p>
           </div>
         )}
@@ -912,6 +923,7 @@ function App() {
     null,
   );
   const [fileOrgPartial, setFileOrgPartial] = useState<string | null>(null);
+  const [analysisElapsed, setAnalysisElapsed] = useState(0); // AI 分析耗时计时器（秒）
 
   // ---- Zustand ----
   const projects = useAppStore((s) => s.projects);
@@ -972,6 +984,7 @@ function App() {
   const staleProjects = useAppStore((s) => s.staleProjects);
   const nodeSpacing = useAppStore((s) => s.settings.nodeSpacing);
   const aiLoading = useAppStore((s) => s.aiLoading);
+  const analysisLoading = activeProjectId ? !!aiLoading[activeProjectId] : false;
   const setAiAnalysis = useAppStore((s) => s.setAiAnalysis);
   const setAiLoading = useAppStore((s) => s.setAiLoading);
 
@@ -1479,6 +1492,19 @@ function App() {
       setAiLoading(activeProjectId, false);
     }
   }, [activeProjectId, setAiAnalysis, setAiLoading]);
+
+  // AI 分析计时器
+  useEffect(() => {
+    if (!analysisLoading) {
+      setAnalysisElapsed(0);
+      return;
+    }
+    setAnalysisElapsed(0);
+    const id = setInterval(() => {
+      setAnalysisElapsed((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [analysisLoading]);
 
   const handleAddProject = useCallback(async () => {
     try {
@@ -2325,6 +2351,7 @@ function App() {
           <DetailPanel
             corePartial={corePartial}
             fileOrgPartial={fileOrgPartial}
+            analysisElapsed={analysisElapsed}
           />
         </aside>
       </div>
