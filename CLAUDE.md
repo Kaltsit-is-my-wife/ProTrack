@@ -181,3 +181,54 @@ models/    → 纯数据结构，不依赖 services/ 或 commands/
 ### 新增功能流程
 
 1. `models/` 定义数据结构 → 2. `services/` 实现逻辑 → 3. `commands/` 暴露接口 → 4. `lib.rs` 的 `generate_handler!` 注册 → 5. `cargo check` 验证
+
+## 前端开发规范（基于 docs/11-frontend-principles.md，每次写前端必须遵守）
+
+### 目录职责
+
+| 目录 | 职责 | 禁止 |
+|------|------|------|
+| `components/` | React 组件，只负责 JSX + 事件 + 局部 UI 状态 | 复杂业务逻辑、数据请求 |
+| `hooks/` | 自定义 Hooks，封装副作用和 DOM 交互 | 包含 JSX |
+| `lib/` | 纯函数（数据处理、API 封装、算法），不依赖 React | 包含组件或 Hook |
+| `store/` | Zustand 全局状态，仅存跨组件共享的核心数据 | 存纯 UI 状态（弹窗开关等） |
+| `types/` | 全局 TypeScript 类型定义 | 包含实现逻辑 |
+
+### 组件设计原则
+
+- **单一职责**：一个组件只做一件事。布局 + 数据 + 状态管理混在一起的必须拆分
+- **文件规模**：单个组件 ≤ 300 行。超过 → 提取子组件或抽离 Hooks
+- **Props 最小化**：避免多层透传，深层依赖用 Zustand 或 Context
+- **受控/非受控明确**：表单组件必须明确设计为受控或非受控
+
+### 状态管理（Zustand）
+
+- `useState` — 仅局部 UI 状态（输入框、下拉、loading）
+- `useAppStore` — 跨组件共享的业务数据（项目 ID、设置、列表）
+- 派生状态用 `useMemo`，不存入 Store
+- 必须用 Selector 精确订阅，避免无关状态触发重渲染
+
+### 样式规范（Tailwind + shadcn/ui）
+
+- 优先 Tailwind 原子类，禁止大段自定义 CSS
+- 优先 shadcn/ui 组件，通过 Props 或 Tailwind 覆盖
+- 颜色/间距/圆角用 CSS 变量，暗色模式用 `dark:` 修饰符
+
+### 类型与错误处理
+
+- **零容忍**：禁止 `any`、`@ts-ignore`、`@ts-expect-error`、不安全的 `as unknown as`
+- 所有后端交互通过 `safeInvoke`，禁止裸调 `invoke`
+- 错误必须转化为 Toast，严禁静默吞掉或只打 console
+- 区分用户可修复错误 vs 系统异常
+
+### 性能
+
+- 复杂对象/函数用 `React.memo`、`useCallback`、`useMemo`
+- React Flow 重渲染用内置虚拟化机制
+- 重计算（目录遍历、ELK）放在 `useMemo` 中
+
+### Tauri IPC
+
+- 统一用 `safeInvoke`，不裸调 `invoke`
+- 异步必须给反馈（Spinner、按钮禁用）
+- 后端返回数据做防御性校验
