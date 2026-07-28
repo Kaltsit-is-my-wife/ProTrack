@@ -187,7 +187,7 @@ export const useAppStore = create<AppState>()((set) => ({
       "数据库迁移",
       "重构代码结构",
     ],
-    nodeSpacing: 70,
+    nodeSpacing: 80,
     aiHistoryMode: "timeline" as const,
     suppressLayer1Warning: false,
   },

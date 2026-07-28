@@ -123,6 +123,7 @@ function MindMapNode({ data, selected }: NodeProps<MindMapNodeData>) {
   return (
     <div
       className={`mindmap-node ${selected ? "is-selected" : ""} ${data.isDir ? "is-dir" : "is-file"}`}
+      style={{ width: 220 }}
       title={data.path}
     >
       <Handle type="target" position={Position.Left} className="!bg-border" />
@@ -198,7 +199,7 @@ function MindMapNode({ data, selected }: NodeProps<MindMapNodeData>) {
           </svg>
         )}
       </span>
-      <span className="mindmap-node-label">{data.label}</span>
+      <span className="mindmap-node-label min-w-0">{data.label}</span>
       {data.childCount > 0 && !isCollapsed && (
         <span className="mindmap-node-badge">{data.childCount}</span>
       )}
@@ -794,7 +795,7 @@ function AiResultCard({
 
 function HiddenMarkerNode({ data }: NodeProps<MindMapNodeData>) {
   return (
-    <div className="mindmap-node mindmap-node-hidden" title={data.path}>
+    <div className="mindmap-node mindmap-node-hidden" style={{ width: 220 }} title={data.path}>
       <Handle type="target" position={Position.Left} className="!bg-border" />
       <span
         className="mindmap-node-icon"
@@ -816,7 +817,7 @@ function HiddenMarkerNode({ data }: NodeProps<MindMapNodeData>) {
           <line x1="1" x2="23" y1="1" y2="23" />
         </svg>
       </span>
-      <span className="mindmap-node-label">{data.label}</span>
+      <span className="mindmap-node-label min-w-0">{data.label}</span>
       <Handle type="source" position={Position.Right} className="!bg-border" />
     </div>
   );

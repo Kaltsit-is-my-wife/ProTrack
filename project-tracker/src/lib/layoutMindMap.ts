@@ -23,7 +23,7 @@ import { filterChildren } from "@/lib/filterRules";
 // 节点尺寸常量（elkjs 布局前必须指定）
 // ============================================================
 
-const NODE_WIDTH = 160;
+const NODE_WIDTH = 220;
 const NODE_HEIGHT = 32;
 
 // ============================================================
@@ -34,9 +34,12 @@ const elk = new ELK({
   defaultLayoutOptions: {
     "elk.algorithm": "layered",
     "elk.direction": "RIGHT",
-    "elk.spacing.nodeNode": "70",
-    "elk.layered.spacing.nodeNodeBetweenLayers": "90",
+    "elk.spacing.nodeNode": "80",
+    "elk.layered.spacing.nodeNodeBetweenLayers": "120",
     "elk.layered.spacing.baseValue": "40",
+    "elk.spacing.edgeNode": "30",
+    "elk.spacing.edgeEdge": "20",
+    "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
   },
 });
 
