@@ -116,97 +116,55 @@ export function ChatPanel() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [expanded]);
 
-  const doSend = useCallback(async (text: string) => {
-    if (!text || !activeProjectId || !project || !tree || busy) return;
-    stopRef.current = false;
+  // ---- 流式请求核心（targetId = 写入哪个消息，isNew = 是否新建用户消息+占位） ----
+  const streamToTarget = useCallback(
+    (text: string, targetId: string, isNew: boolean) => {
+      if (!activeProjectId || !project || !tree) return;
 
-    // 1. 添加用户消息
-    const userMsg: ChatMessage = {
-      id: nextId(),
-      text,
-      role: "user",
-      time: Date.now(),
-    };
-    addChatMessage(activeProjectId, userMsg);
-    invoke("ensure_project_tracker_dir", { projectPath: project.path }).catch(
-      () => {},
-    );
-    console.log("[Chat] 发送消息:", text);
+      if (isNew) {
+        addChatMessage(activeProjectId, { id: nextId(), text, role: "user", time: Date.now() });
+        invoke("ensure_project_tracker_dir", { projectPath: project.path }).catch(() => {});
+        addChatMessage(activeProjectId, { id: targetId, text: "", role: "ai", time: Date.now() });
+      }
 
-    // 2. 创建空占位消息 + 流式获取 AI 回复
-    const placeholderId = nextId();
-    const placeholder: ChatMessage = {
-      id: placeholderId,
-      text: "",
-      role: "ai",
-      time: Date.now(),
-    };
-    addChatMessage(activeProjectId, placeholder);
+      setTyping(true);
+      setBusy(true);
+      stopRef.current = false;
 
-    setTyping(true);
-    setBusy(true);
-    const allMessages =
-      useAppStore.getState().chatMessages[activeProjectId] ?? [];
-    // 传给 AI 的历史：排除用户消息和占位符，取最近 20 条
-    const history = allMessages.slice(0, -2).slice(-20);
+      const all = useAppStore.getState().chatMessages[activeProjectId] ?? [];
+      const history = isNew ? all.slice(0, -2).slice(-20) : all.slice(0, -1).slice(-20);
+      let fullText = "";
 
-    let fullText = "";
+      chatWithAiStream(project, tree, text, history, hiddenFiles,
+        useAppStore.getState().settings.dataPath,
+        (chunk: string) => {
+          if (stopRef.current) return;
+          if (!fullText) setTyping(false);
+          fullText += chunk;
+          const msgs = useAppStore.getState().chatMessages[activeProjectId] ?? [];
+          useAppStore.setState({ chatMessages: { ...useAppStore.getState().chatMessages, [activeProjectId]: msgs.map(m => m.id === targetId ? { ...m, text: fullText } : m) } });
+        },
+        (layer: number) => {
+          setTyping(false); setBusy(false); setPromptLayer(layer);
+          if (layer === 1) setLayer1ReplyCount(c => c + 1); else setLayer1ReplyCount(0);
+        },
+        (error: string) => {
+          setTyping(false); setBusy(false);
+          const msgs = useAppStore.getState().chatMessages[activeProjectId] ?? [];
+          useAppStore.setState({ chatMessages: { ...useAppStore.getState().chatMessages, [activeProjectId]: msgs.map(m => m.id === targetId ? { ...m, text: `抱歉，AI 请求失败：${error}` } : m) } });
+        },
+      );
+    },
+    [activeProjectId, project, tree, hiddenFiles, addChatMessage],
+  );
 
-    chatWithAiStream(
-      project,
-      tree,
-      text,
-      history,
-      hiddenFiles,
-      useAppStore.getState().settings.dataPath,
-      // onChunk — 逐字追加到占位消息
-      (chunk: string) => {
-        if (stopRef.current) return;
-        if (!fullText) setTyping(false); // 首个 chunk 到达，关掉打字动画
-        fullText += chunk;
-        const msgs = useAppStore.getState().chatMessages[activeProjectId] ?? [];
-        const updated = msgs.map((m) =>
-          m.id === placeholderId ? { ...m, text: fullText } : m,
-        );
-        useAppStore.setState({
-          chatMessages: {
-            ...useAppStore.getState().chatMessages,
-            [activeProjectId]: updated,
-          },
-        });
-      },
-      // onDone — 流结束
-      (promptLayer: number) => {
-        setTyping(false);
-        setBusy(false);
-        setPromptLayer(promptLayer);
-        if (promptLayer === 1) {
-          setLayer1ReplyCount((c) => c + 1);
-        } else {
-          setLayer1ReplyCount(0);
-        }
-        console.log("[Chat] AI 流式回复完成 | len:", fullText.length);
-      },
-      // onError
-      (error: string) => {
-        setTyping(false);
-        setBusy(false);
-        const msgs = useAppStore.getState().chatMessages[activeProjectId] ?? [];
-        const updated = msgs.map((m) =>
-          m.id === placeholderId
-            ? { ...m, text: `抱歉，AI 请求失败：${error}` }
-            : m,
-        );
-        useAppStore.setState({
-          chatMessages: {
-            ...useAppStore.getState().chatMessages,
-            [activeProjectId]: updated,
-          },
-        });
-        console.error("[Chat] AI 流式请求失败:", error);
-      },
-    );
-  }, [activeProjectId, project, tree, hiddenFiles, addChatMessage, busy]);
+  const doSend = useCallback(
+    (text: string) => {
+      if (!text || busy) return;
+      streamToTarget(text, nextId(), true);
+    },
+    [busy, streamToTarget],
+  );
 
   const handleSend = useCallback(async () => {
     const value = textareaRef.current?.value.trim();
@@ -236,18 +194,26 @@ export function ChatPanel() {
 
   const handleRegenerate = useCallback(
     (aiIndex: number) => {
-      // 找到这条 AI 消息之前的最后一条用户消息
+      if (busy) return;
       const msgs = useAppStore.getState().chatMessages[activeProjectId ?? ""] ?? [];
+      const aiMsg = msgs[aiIndex];
+      if (!aiMsg) return;
       let userText = "";
       for (let i = aiIndex - 1; i >= 0; i--) {
-        if (msgs[i]?.role === "user") {
-          userText = msgs[i].text;
-          break;
-        }
+        if (msgs[i]?.role === "user") { userText = msgs[i].text; break; }
       }
-      if (userText) doSend(userText);
+      if (!userText) return;
+
+      // 清空当前 AI 消息文本，流式写回同一个 id
+      useAppStore.setState({
+        chatMessages: {
+          ...useAppStore.getState().chatMessages,
+          [activeProjectId!]: msgs.map(m => m.id === aiMsg.id ? { ...m, text: "" } : m),
+        },
+      });
+      streamToTarget(userText, aiMsg.id, false);
     },
-    [activeProjectId, doSend],
+    [activeProjectId, busy, streamToTarget],
   );
 
   const handleStop = useCallback(() => {
