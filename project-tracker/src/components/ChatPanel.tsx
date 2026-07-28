@@ -35,7 +35,8 @@ function nextId(): string {
 
 export function ChatPanel() {
   const [expanded, setExpanded] = useState(false);
-  const [typing, setTyping] = useState(false);
+  const [typing, setTyping] = useState(false); // 打字动画（首个 chunk 到达后关闭）
+  const [busy, setBusy] = useState(false); // 输入框禁用（流式全部完成后才解禁）
   const [promptLayer, setPromptLayer] = useState<number | null>(null);
   const [layer1ReplyCount, setLayer1ReplyCount] = useState(0);
   const suppressWarning = useAppStore((s) => s.settings.suppressLayer1Warning);
@@ -116,7 +117,7 @@ export function ChatPanel() {
 
   const handleSend = useCallback(async () => {
     const value = textareaRef.current?.value.trim();
-    if (!value || !activeProjectId || !project || !tree) return;
+    if (!value || !activeProjectId || !project || !tree || busy) return;
 
     // 1. 添加用户消息
     const userMsg: ChatMessage = {
@@ -149,6 +150,7 @@ export function ChatPanel() {
     addChatMessage(activeProjectId, placeholder);
 
     setTyping(true);
+    setBusy(true);
     const allMessages =
       useAppStore.getState().chatMessages[activeProjectId] ?? [];
     // 传给 AI 的历史：排除用户消息和占位符，取最近 20 条
@@ -181,6 +183,7 @@ export function ChatPanel() {
       // onDone — 流结束
       (promptLayer: number) => {
         setTyping(false);
+        setBusy(false);
         setPromptLayer(promptLayer);
         if (promptLayer === 1) {
           setLayer1ReplyCount((c) => c + 1);
@@ -192,6 +195,7 @@ export function ChatPanel() {
       // onError
       (error: string) => {
         setTyping(false);
+        setBusy(false);
         const msgs = useAppStore.getState().chatMessages[activeProjectId] ?? [];
         const updated = msgs.map((m) =>
           m.id === placeholderId
@@ -296,8 +300,9 @@ export function ChatPanel() {
         <textarea
           ref={textareaRef}
           className="chat-bar-input"
-          placeholder="输入消息…"
+          placeholder={busy ? "AI 回复中…" : "输入消息…"}
           rows={1}
+          disabled={busy}
           onKeyDown={handleKeyDown}
           onInput={autoResize}
         />
@@ -305,7 +310,8 @@ export function ChatPanel() {
           type="button"
           className="chat-bar-ball"
           onClick={handleBallClick}
-          title={expanded ? "发送" : "展开输入框"}
+          disabled={busy}
+          title={expanded ? (busy ? "AI 回复中" : "发送") : "展开输入框"}
         >
           <ArrowUp className="size-4" />
         </button>
