@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import { useCallback, useEffect, useRef } from "react";
-import { Trash2 } from "lucide-react";
+import { Filter, Trash2 } from "lucide-react";
 
 // ============================================================
 // 菜单项定义（留后手：后续新增选项只需往 items 数组追加）
@@ -41,6 +41,7 @@ interface ProjectContextMenuProps {
   projectName: string;
   onClose: () => void;
   onRemove: () => void;
+  onEditIgnore: () => void;
 }
 
 // ============================================================
@@ -53,6 +54,7 @@ export function ProjectContextMenu({
   projectName,
   onClose,
   onRemove,
+  onEditIgnore,
 }: ProjectContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -103,10 +105,17 @@ export function ProjectContextMenu({
   // ---- 菜单项构建（后续新增选项只需往这里追加）----
   const items: ProjectMenuItem[] = [
     {
+      key: "ignore",
+      label: "编辑排除规则",
+      icon: <Filter className="size-3.5" />,
+      action: onEditIgnore,
+    },
+    {
       key: "remove",
       label: "移除",
       icon: <Trash2 className="size-3.5" />,
       danger: true,
+      separatorBefore: true,
       action: onRemove,
     },
   ];

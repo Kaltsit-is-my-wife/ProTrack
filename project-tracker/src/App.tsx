@@ -74,6 +74,7 @@ import {
 } from "@/lib/ai";
 import { SettingsPage } from "@/components/SettingsPage";
 import { HiddenFilesDialog } from "@/components/HiddenFilesDialog";
+import { IgnoreRulesDialog } from "@/components/IgnoreRulesDialog";
 import { NodeContextMenu } from "@/components/NodeContextMenu";
 import { ProjectContextMenu } from "@/components/ProjectContextMenu";
 import { ChatPanel } from "@/components/ChatPanel";
@@ -933,6 +934,10 @@ function App() {
   // 隐藏文件对话框
   const [hiddenDialogPath, setHiddenDialogPath] = useState<string | null>(null);
 
+  // 排除规则（项目级 .project-tracker/ignore）
+  const [ignoreRulesByProject, setIgnoreRulesByProject] = useState<Record<string, string[]>>({});
+  const [ignoreDialogProjectId, setIgnoreDialogProjectId] = useState<string | null>(null);
+
   // ---- 右键上下文菜单（思维导图节点）----
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -1040,7 +1045,7 @@ function App() {
 
     const seq = ++fingerprintSeqRef.current;
     console.log("[Fingerprint] 开始异步扫描, seq:", seq, "path:", tree.path);
-    invoke<DirNode>("scan_directory", { path: tree.path, maxDepth: 5 })
+    invoke<DirNode>("scan_directory", { path: tree.path, maxDepth: 5, ignoreRules: currentIgnoreRules })
       .then((freshTree) => {
         if (seq !== fingerprintSeqRef.current) {
           console.log("[Fingerprint] 扫描结果被丢弃（竞态）, seq:", seq);
@@ -1100,7 +1105,7 @@ function App() {
       "已存指纹长度:",
       snap.dirFingerprint.length,
     );
-    invoke<DirNode>("scan_directory", { path: tree.path, maxDepth: 5 })
+    invoke<DirNode>("scan_directory", { path: tree.path, maxDepth: 5, ignoreRules: currentIgnoreRules })
       .then((freshTree) => {
         const fp = buildFingerprint(freshTree);
         const oldCount = JSON.parse(snap.dirFingerprint!).length;
@@ -1286,6 +1291,26 @@ function App() {
     prevActiveRef.current = activeProjectId;
   }, [activeProjectId, saveCurrentSnapshot]);
 
+  // ---- 加载项目排除规则 ----
+  useEffect(() => {
+    if (!activeProjectId) return;
+    const project = useAppStore.getState().projects.find((p) => p.id === activeProjectId);
+    if (!project) return;
+    invoke<string[]>("load_ignore_rules", { projectPath: project.path })
+      .then((rules) => {
+        setIgnoreRulesByProject((prev) => ({ ...prev, [activeProjectId]: rules }));
+      })
+      .catch(() => {});
+  }, [activeProjectId]);
+
+  // 获取当前项目的排除规则
+  const currentIgnoreRules: string[] = activeProjectId
+    ? (ignoreRulesByProject[activeProjectId] ?? [])
+    : [];
+  // ref 版：handleRefresh 等回调不走 deps 也能读到最新值
+  const currentIgnoreRulesRef = useRef(currentIgnoreRules);
+  currentIgnoreRulesRef.current = currentIgnoreRules;
+
   // 布局锁：防止并发布局竞态覆盖
   const layoutLock = useRef(0);
 
@@ -1335,8 +1360,10 @@ function App() {
   // ==========================================================
 
   const [refreshing, setRefreshing] = useState(false);
+  const forceRelayoutRef = useRef(false); // 全量刷新时跳过位置保留
 
   const handleRefresh = useCallback(async () => {
+    forceRelayoutRef.current = true;
     if (!activeProjectId) return;
     const store = useAppStore.getState();
     const project = store.projects.find((p) => p.id === activeProjectId);
@@ -1352,6 +1379,7 @@ function App() {
       const tree = await invoke<DirNode>("scan_directory", {
         path: project.path,
         maxDepth: 5,
+        ignoreRules: currentIgnoreRulesRef.current,
       });
 
       // 2. 重新计算过滤规则
@@ -1473,6 +1501,7 @@ function App() {
       const tree = await invoke<DirNode>("scan_directory", {
         path: dirPath,
         maxDepth: scanDepth,
+        ignoreRules: currentIgnoreRulesRef.current,
       });
 
       addProject({
@@ -1563,6 +1592,46 @@ function App() {
       });
     },
     [collapsedPaths],
+  );
+
+  // ---- 排除规则 ----
+
+  const handleExcludeDir = useCallback(
+    async (dirName: string) => {
+      if (!activeProjectId) return;
+      const project = useAppStore.getState().projects.find((p) => p.id === activeProjectId);
+      if (!project) return;
+
+      const rules = ignoreRulesByProject[activeProjectId] ?? [];
+      const newRule = dirName + "/";
+      if (rules.includes(newRule)) return; // 已存在
+
+      const updated = [...rules, newRule];
+      currentIgnoreRulesRef.current = updated; // 直接更新 ref，绕过异步渲染
+      setIgnoreRulesByProject((prev) => ({ ...prev, [activeProjectId]: updated }));
+
+      await invoke("save_ignore_rules", { projectPath: project.path, rules: updated }).catch(() => {});
+      handleRefresh();
+    },
+    [activeProjectId, ignoreRulesByProject, handleRefresh],
+  );
+
+  const handleSaveIgnoreRules = useCallback(
+    async (projectPath: string, text: string) => {
+      const rules = text
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+
+      if (activeProjectId) {
+        currentIgnoreRulesRef.current = rules; // 直接更新 ref，绕过异步渲染
+        setIgnoreRulesByProject((prev) => ({ ...prev, [activeProjectId]: rules }));
+      }
+
+      await invoke("save_ignore_rules", { projectPath, rules }).catch(() => {});
+      handleRefresh();
+    },
+    [activeProjectId, handleRefresh],
   );
 
   // 子树重排：触发 ELK 重排，但只更新选中节点子树的布局
@@ -1717,6 +1786,7 @@ function App() {
             "| current:",
             layoutLock.current,
           );
+          forceRelayoutRef.current = false;
           return;
         }
         console.log(
@@ -1761,7 +1831,8 @@ function App() {
 
         const finalNodes = newNodes.map((nn) => {
           const cur = existingMap.get(nn.id);
-          if (cur) return { ...nn, position: cur.position, hidden: cur.hidden };
+          // 全量刷新时跳过位置保留，全程使用 ELK 新坐标
+          if (cur && !forceRelayoutRef.current) return { ...nn, position: cur.position, hidden: cur.hidden };
 
           const parentEdge = newEdges.find((e) => e.target === nn.id);
           if (parentEdge) {
@@ -1798,6 +1869,7 @@ function App() {
 
         setNodes(finalNodes);
         setEdges(newEdges);
+        forceRelayoutRef.current = false;
 
         // ELK 完成后：确保快照存在 → 补指纹（指纹代表"导图生成时"的目录状态）
         if (elkProjectId) {
@@ -1828,6 +1900,7 @@ function App() {
         }
       })
       .catch((err) => {
+        forceRelayoutRef.current = false;
         console.error("[Layout] ELK 布局失败:", err);
       });
 
@@ -2272,6 +2345,9 @@ function App() {
             );
             removeProject(projectContextMenu.projectId);
           }}
+          onEditIgnore={() => {
+            setIgnoreDialogProjectId(projectContextMenu.projectId);
+          }}
         />
       )}
 
@@ -2297,6 +2373,15 @@ function App() {
             );
             handleRelayoutSubtree(contextMenu.nodePath);
           }}
+          onExcludeDir={() => {
+            const nodePath = contextMenu.nodePath;
+            const dirName = nodePath.split(/[\\/]/).pop() || nodePath;
+            handleExcludeDir(dirName);
+          }}
+          onHideFile={() => {
+            const target = nodesRef.current.find((n) => n.id === contextMenu.nodeId);
+            if (target) handleNodesDelete([target]);
+          }}
         />
       )}
 
@@ -2307,6 +2392,21 @@ function App() {
           onClose={() => setHiddenDialogPath(null)}
         />
       )}
+
+      {/* 排除规则编辑对话框 */}
+      {ignoreDialogProjectId && (() => {
+        const p = projects.find((pp) => pp.id === ignoreDialogProjectId);
+        if (!p) return null;
+        const rules = ignoreRulesByProject[ignoreDialogProjectId] ?? [];
+        return (
+          <IgnoreRulesDialog
+            projectName={p.name}
+            initialRules={rules.join("\n")}
+            onSave={(text) => handleSaveIgnoreRules(p.path, text)}
+            onClose={() => setIgnoreDialogProjectId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

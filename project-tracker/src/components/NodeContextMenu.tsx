@@ -17,6 +17,8 @@ import { useCallback, useEffect, useRef } from "react";
 import {
   ChevronDown,
   ChevronRight,
+  EyeOff,
+  FileX,
   RefreshCw,
 } from "lucide-react";
 
@@ -47,6 +49,8 @@ interface NodeContextMenuProps {
   onClose: () => void;
   onToggleCollapse: () => void;
   onRefreshSubtree: () => void;
+  onExcludeDir: () => void;
+  onHideFile: () => void;
 }
 
 // ============================================================
@@ -61,6 +65,8 @@ export function NodeContextMenu({
   onClose,
   onToggleCollapse,
   onRefreshSubtree,
+  onExcludeDir,
+  onHideFile,
 }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -124,6 +130,21 @@ export function NodeContextMenu({
       icon: <RefreshCw className="size-3.5" />,
       disabled: !isDir,
       action: onRefreshSubtree,
+    },
+    {
+      key: "exclude",
+      label: "排除此目录",
+      icon: <EyeOff className="size-3.5" />,
+      disabled: !isDir,
+      separatorBefore: true,
+      action: onExcludeDir,
+    },
+    {
+      key: "hide",
+      label: "隐藏此文件",
+      icon: <FileX className="size-3.5" />,
+      disabled: isDir,
+      action: onHideFile,
     },
   ];
 

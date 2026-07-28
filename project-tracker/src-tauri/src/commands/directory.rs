@@ -20,6 +20,149 @@ use crate::models::error::AppError;
 use crate::utils::logger::Level;
 
 // ============================================================
+// 内置默认排除规则（始终生效，与用户自定义规则合并）
+// ============================================================
+
+const DEFAULT_IGNORE_RULES: &[&str] = &[
+    "# 构建产物",
+    "node_modules/",
+    "dist/",
+    "target/",
+    "build/",
+    "out/",
+    ".next/",
+    ".nuxt/",
+    "# 版本控制",
+    ".git/",
+    ".svn/",
+    "# Python",
+    "__pycache__/",
+    "*.pyc",
+    ".venv/",
+    "venv/",
+    "# IDE",
+    ".idea/",
+    ".vscode/",
+    "# 系统",
+    ".DS_Store",
+    "Thumbs.db",
+    "desktop.ini",
+    "# 日志",
+    "*.log",
+    "logs/",
+];
+
+/// 获取内置默认排除规则（纯规则行，不含注释和空行）
+pub fn get_default_ignore_rules() -> Vec<String> {
+    DEFAULT_IGNORE_RULES
+        .iter()
+        .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+        .map(|l| l.to_string())
+        .collect()
+}
+
+// ============================================================
+// 规则匹配逻辑
+// ============================================================
+
+/// 判断文件/目录是否被忽略
+fn is_ignored(name: &str, is_dir: bool, rules: &[String]) -> bool {
+    for rule in rules {
+        let rule = rule.trim();
+        if rule.is_empty() || rule.starts_with('#') {
+            continue;
+        }
+        if matches_rule(name, is_dir, rule) {
+            return true;
+        }
+    }
+    false
+}
+
+fn matches_rule(name: &str, is_dir: bool, rule: &str) -> bool {
+    // "dirname/" → 仅匹配同名目录
+    if let Some(dir_name) = rule.strip_suffix('/') {
+        return is_dir && name == dir_name;
+    }
+    // "*.ext" → 匹配后缀
+    if let Some(ext) = rule.strip_prefix('*') {
+        return name.ends_with(ext);
+    }
+    // 精确匹配
+    name == rule
+}
+
+// ============================================================
+// 加载 / 保存项目排除规则
+// ============================================================
+
+/// 加载项目排除规则（合并：内置默认 + 用户自定义）
+#[tauri::command]
+pub fn load_ignore_rules(
+    project_path: String,
+    logger_state: tauri::State<'_, crate::utils::logger::Logger>,
+) -> Result<Vec<String>, AppError> {
+    let mut rules = get_default_ignore_rules();
+
+    let path = Path::new(&project_path).join(".project-tracker").join("ignore");
+    if path.exists() {
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| AppError::io_error(format!("读取忽略规则失败: {}", e)))?;
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                rules.push(trimmed.to_string());
+            }
+        }
+        logger_state.write(Level::Info, "Ignore", "合并规则已加载（默认 + 自定义）");
+    }
+
+    Ok(rules)
+}
+
+/// 保存用户自定义排除规则到 .project-tracker/ignore
+#[tauri::command]
+pub fn save_ignore_rules(
+    project_path: String,
+    rules: Vec<String>,
+    logger_state: tauri::State<'_, crate::utils::logger::Logger>,
+) -> Result<(), AppError> {
+    let dir = Path::new(&project_path).join(".project-tracker");
+    if !dir.exists() {
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| AppError::io_error(format!("创建 .project-tracker 失败: {}", e)))?;
+    }
+
+    let path = dir.join("ignore");
+    // 过滤掉内置默认规则和注释/空行
+    let defaults = get_default_ignore_rules();
+    let custom: Vec<&str> = rules
+        .iter()
+        .map(|r| r.trim())
+        .filter(|r| !r.is_empty() && !r.starts_with('#') && !defaults.contains(&r.to_string()))
+        .collect();
+
+    let content = if custom.is_empty() {
+        String::new()
+    } else {
+        let mut s = String::from("# Project Tracker — 项目排除规则\n");
+        s.push_str("# 语法类似 .gitignore：dirname/ 排除目录、*.ext 排除后缀、name 精确匹配\n");
+        s.push('\n');
+        for r in &custom {
+            s.push_str(r);
+            s.push('\n');
+        }
+        s
+    };
+
+    std::fs::write(&path, &content)
+        .map_err(|e| AppError::io_error(format!("保存忽略规则失败: {}", e)))?;
+
+    logger_state.write(Level::Info, "Ignore", &format!("自定义规则已保存 ({} 条)", custom.len()));
+    Ok(())
+}
+
+// ============================================================
 // scan_directory — 递归扫描目录并返回树形结构
 // ============================================================
 
@@ -27,14 +170,15 @@ use crate::utils::logger::Level;
 pub fn scan_directory(
     path: String,
     max_depth: u32,
+    ignore_rules: Vec<String>,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
 ) -> Result<DirNode, AppError> {
     logger_state.write(
         Level::Info,
         "Scan",
         &format!(
-            "scan_directory called | path: {} | maxDepth: {}",
-            path, max_depth
+            "scan_directory called | path: {} | maxDepth: {} | ignoreRules: {}",
+            path, max_depth, ignore_rules.len()
         ),
     );
 
@@ -59,7 +203,7 @@ pub fn scan_directory(
         .unwrap_or_else(|| path.clone());
 
     let t0 = std::time::Instant::now();
-    let result = build_subtree(root_path, &root_name, &path, 0, max_depth);
+    let result = build_subtree(root_path, &root_name, &path, 0, max_depth, &ignore_rules);
     logger_state.write(
         Level::Info,
         "Scan",
@@ -74,7 +218,14 @@ pub fn scan_directory(
 }
 
 /// 递归构建子树
-fn build_subtree(dir: &Path, name: &str, full_path: &str, depth: u32, max_depth: u32) -> DirNode {
+fn build_subtree(
+    dir: &Path,
+    name: &str,
+    full_path: &str,
+    depth: u32,
+    max_depth: u32,
+    ignore_rules: &[String],
+) -> DirNode {
     let mut children: Vec<DirNode> = Vec::new();
 
     if depth < max_depth {
@@ -88,14 +239,20 @@ fn build_subtree(dir: &Path, name: &str, full_path: &str, depth: u32, max_depth:
             for entry in items {
                 let child_name = entry.file_name().to_string_lossy().to_string();
 
-                // 跳过隐藏文件/目录（以 . 开头），如 .git .github .vscode .env 等
+                // 跳过隐藏文件/目录（以 . 开头）
                 if child_name.starts_with('.') {
+                    continue;
+                }
+
+                let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+
+                // 应用排除规则
+                if is_ignored(&child_name, is_dir, ignore_rules) {
                     continue;
                 }
 
                 let child_path = entry.path();
                 let child_full = child_path.to_string_lossy().to_string();
-                let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
 
                 if is_dir {
                     children.push(build_subtree(
@@ -104,6 +261,7 @@ fn build_subtree(dir: &Path, name: &str, full_path: &str, depth: u32, max_depth:
                         &child_full,
                         depth + 1,
                         max_depth,
+                        ignore_rules,
                     ));
                 } else {
                     let modified_at = entry
@@ -137,8 +295,6 @@ fn build_subtree(dir: &Path, name: &str, full_path: &str, depth: u32, max_depth:
 // ensure_project_tracker_dir — 确保项目目录下存在 .project-tracker/
 // ============================================================
 
-/// 在项目根目录下创建 `.project-tracker/`（幂等）。
-/// 调用时机：添加项目、切换项目、重启应用、扫描目录、AI 交互前等。
 #[tauri::command]
 pub fn ensure_project_tracker_dir(
     project_path: String,
@@ -159,7 +315,6 @@ pub fn ensure_project_tracker_dir(
         std::fs::create_dir_all(&dir)
             .map_err(|e| AppError::io_error(format!("创建 .project-tracker 失败: {}", e)))?;
 
-        // Windows 上 . 开头的目录不会自动隐藏，需设置隐藏属性
         #[cfg(target_os = "windows")]
         {
             let _ = std::process::Command::new("attrib")

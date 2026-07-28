@@ -82,6 +82,8 @@ pub fn run() {
             commands::system::greet,
             commands::directory::scan_directory,
             commands::directory::ensure_project_tracker_dir,
+            commands::directory::load_ignore_rules,
+            commands::directory::save_ignore_rules,
             commands::system::open_in_explorer,
             commands::system::log_message,
             commands::system::get_data_dir,
