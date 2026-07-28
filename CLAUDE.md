@@ -139,3 +139,45 @@ The `ready.md` file outlines the full product plan. For detailed API references,
 DO：只改外层这一份 .gitignore；优先用无路径前缀模式（如 node_modules/，匹配任意层级罩住内层），需精确定位内层时用 project-tracker/... 相对前缀；改规则先于 git add，已追踪文件需先 git rm -r --cached；提交前用 git check-ignore -v <path> 验证（有输出=已忽略，无输出=危险）。
 
 DON'T：❌ 在内层新建 .gitignore；❌ 写绝对路径；❌ 提交上述敏感/巨型路径；❌ 把 .git 挪到内层或在内层 init；❌ 用无斜杠的 log 宽匹配（应写 log/ 或 *.log）。
+
+## Rust 后端开发规范（基于 docs/08-rust-backend-principles.md，每次写后端必须遵守）
+
+### 分层架构
+
+```
+commands/  → 调用 → services/  +  models/
+services/  → 调用 → models/  +  外部库
+utils/     → 不依赖任何其他模块
+models/    → 纯数据结构，不依赖 services/ 或 commands/
+```
+
+### 各层职责
+
+**commands/** — 每个命令函数只做三件事：参数校验、调用 service、返回结果。禁止超过 20 行、直接写 HTTP 请求、直接读写文件。
+
+**services/** — 纯业务逻辑，被 commands 调用。按功能拆分文件：
+- `ai_client.rs` — 统一 HTTP 客户端（chat / analyze / test_connection），不混入 prompt 逻辑
+- `prompt_manager.rs` — Prompt 三层管理（内置/全局/项目），构建/存取/校验
+- `data_files.rs` — 文件 I/O
+
+**models/** — 纯 `#[derive(Serialize, Deserialize)]` 结构体，禁止写业务逻辑、禁止依赖 services/ 或 commands/。
+
+**utils/** — 通用工具，任何层可调用。
+
+### 服务拆分标准
+
+| 文件 | 职责 | 禁止混入 |
+|------|------|---------|
+| `ai_client.rs` | HTTP 请求、SSE 流式、JSON 解析、分析编排 | Prompt 构建/存取 |
+| `prompt_manager.rs` | Prompt 三层解析、变量替换、校验、存取 | HTTP 调用 |
+| `data_files.rs` | 原子读写、路径解析、缓存、导出 | 业务逻辑 |
+
+### 错误处理
+
+- service 层返回 `Result<T, String>`（或自定义错误）
+- command 层统一 `.map_err(classify_ai_error)` 转为 `AppError`
+- 禁止把 `reqwest::Error`、`io::Error` 等原始错误直接抛给前端
+
+### 新增功能流程
+
+1. `models/` 定义数据结构 → 2. `services/` 实现逻辑 → 3. `commands/` 暴露接口 → 4. `lib.rs` 的 `generate_handler!` 注册 → 5. `cargo check` 验证

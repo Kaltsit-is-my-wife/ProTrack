@@ -65,7 +65,7 @@ pub fn save_system_prompt(
     prompt_text: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
 ) -> Result<(), AppError> {
-    services::ai_client::save_system_prompt(&data_dir, &prompt_text, &logger_state)
+    services::prompt_manager::save_system_prompt(&data_dir, &prompt_text, &logger_state)
         .map_err(|e| AppError::data_save_failed(e))
 }
 
@@ -78,7 +78,7 @@ pub fn load_system_prompt(
     data_dir: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
 ) -> Result<Option<String>, AppError> {
-    services::ai_client::load_system_prompt(&data_dir, &logger_state)
+    services::prompt_manager::load_system_prompt(&data_dir, &logger_state)
         .map_err(|e| AppError::data_load_failed(e))
 }
 
@@ -92,7 +92,7 @@ pub fn save_analysis_prompt(
     prompt_text: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
 ) -> Result<(), AppError> {
-    services::ai_client::save_analysis_prompt(&data_dir, &prompt_text, &logger_state)
+    services::prompt_manager::save_analysis_prompt(&data_dir, &prompt_text, &logger_state)
         .map_err(|e| AppError::data_save_failed(e))
 }
 
@@ -105,7 +105,7 @@ pub fn load_analysis_prompt(
     data_dir: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
 ) -> Result<Option<String>, AppError> {
-    services::ai_client::load_analysis_prompt(&data_dir, &logger_state)
+    services::prompt_manager::load_analysis_prompt(&data_dir, &logger_state)
         .map_err(|e| AppError::data_load_failed(e))
 }
 
@@ -119,7 +119,7 @@ pub fn save_project_rules(
     rules: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
 ) -> Result<(), AppError> {
-    services::ai_client::save_project_rules(&project_path, &rules, &logger_state)
+    services::prompt_manager::save_project_rules(&project_path, &rules, &logger_state)
         .map_err(|e| AppError::data_save_failed(e))
 }
 
@@ -132,7 +132,7 @@ pub fn load_project_rules(
     project_path: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
 ) -> Result<Option<String>, AppError> {
-    Ok(services::ai_client::load_project_rules(&project_path, &logger_state))
+    Ok(services::prompt_manager::load_project_rules(&project_path, &logger_state))
 }
 
 // ============================================================
