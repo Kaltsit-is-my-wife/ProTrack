@@ -1632,12 +1632,17 @@ pub fn build_file_org_prompt(req: &AnalyzeRequest) -> String {
 
 你必须返回一个严格的 JSON 对象。**fileOrganization 字段的值必须是一个纯文本字符串！**
 
+在 JSON 中，换行符写成 \\n（一个反斜杠加字母 n）。不要写成 \\\\n（两个反斜杠），那是错误的！
+反斜杠 \\n 在 JSON 解析后会变成真正的换行。
+
 正确示例：
 ```json
 {{
   "fileOrganization": "项目根目录/\\n├── 文档/\\n│   ├── 合同.docx\\n│   └── 需求.docx\\n├── 源码/\\n└── README.md"
 }}
 ```
+
+注意：上面 JSON 中每一行末尾的 \\n 是换行符，不是字面量文本。
 
 **严禁**在 fileOrganization 中使用 JSON 对象、数组或嵌套结构！只能是纯文本字符串！
 
@@ -1674,36 +1679,39 @@ pub async fn analyze_project_file_org(
     .await?;
 
     // 解析
-    match serde_json::from_str::<AnalyzeFileOrgResponse>(&json_str) {
-        Ok(r) => {
-            logger.write(
-                Level::Info,
-                "AI:AnalyzeFileOrg",
-                &format!("分析完成 | fileOrg: {} chars", r.file_organization.len()),
-            );
-            Ok(r)
-        }
+    let mut text = match serde_json::from_str::<AnalyzeFileOrgResponse>(&json_str) {
+        Ok(r) => r.file_organization,
         Err(_e) => {
             // 容错：手动提取 fileOrganization 字段，兼容对象/数组/字符串
             logger.write(Level::Warn, "AI:AnalyzeFileOrg", "标准解析失败，容错提取");
-            let text = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json_str) {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json_str) {
                 let fo = parsed
                     .get("fileOrganization")
                     .or_else(|| parsed.get("file_organization"));
                 match fo {
                     Some(serde_json::Value::String(s)) => s.clone(),
                     Some(v @ (serde_json::Value::Object(_) | serde_json::Value::Array(_))) => {
-                        // AI 返回了对象/数组 → 转为格式化的 JSON 文本供用户查看
                         serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string())
                     }
                     _ => json_str.to_string(),
                 }
             } else {
                 json_str.to_string()
-            };
-            Ok(AnalyzeFileOrgResponse { file_organization: text })
+            }
         }
+    };
+
+    // 兜底：AI 可能把 \\n 当成字面量输出（JSON 里写成 \\\\n → 解析后是字面量 \\n）
+    if !text.contains('\n') && text.contains("\\n") {
+        text = text.replace("\\n", "\n");
     }
+
+    logger.write(
+        Level::Info,
+        "AI:AnalyzeFileOrg",
+        &format!("分析完成 | fileOrg: {} chars", text.len()),
+    );
+    Ok(AnalyzeFileOrgResponse { file_organization: text })
 }
 
 /// 从文本中提取 JSON（兼容 ```json ... ``` 包裹格式，括号深度匹配）

@@ -23,6 +23,39 @@ use crate::models::error::AppError;
 use crate::services;
 
 // ============================================================
+// AI 错误分类 — 根据服务层返回的错误消息映射到精确的 AppError
+// ============================================================
+
+fn classify_ai_error(msg: String) -> AppError {
+    if msg.contains("超时") {
+        return AppError::ai_timeout();
+    }
+    if msg.contains("无法连接") {
+        return AppError::ai_connection_failed(msg);
+    }
+    if msg.contains("认证失败") || msg.contains("API Key") || msg.contains("未配置 API Key") {
+        return AppError::ai_invalid_key();
+    }
+    if msg.contains("HTTP 429") {
+        return AppError::ai_rate_limited();
+    }
+    if msg.contains("HTTP 5") {
+        if let Some(s) = msg.find("HTTP 5") {
+            let rest = &msg[s + 5..];
+            let code_str = rest.chars().take(3).filter(|c| c.is_ascii_digit()).collect::<String>();
+            if let Ok(code) = code_str.parse::<u16>() {
+                return AppError::ai_server_error(code);
+            }
+        }
+        return AppError::ai_server_error(500);
+    }
+    if msg.contains("空内容") || msg.contains("不是有效 JSON") {
+        return AppError::ai_invalid_response(msg);
+    }
+    AppError::ai_request_failed(msg)
+}
+
+// ============================================================
 // save_system_prompt — 保存全局系统 prompt（Layer 2）
 // ============================================================
 
@@ -113,7 +146,7 @@ pub async fn analyze_project_core(
 ) -> Result<AnalyzeCoreResponse, AppError> {
     services::ai_client::analyze_project_core(&req, &logger_state)
         .await
-        .map_err(|e| AppError::ai_request_failed(e))
+        .map_err(classify_ai_error)
 }
 
 // ============================================================
@@ -127,7 +160,7 @@ pub async fn analyze_project_file_org(
 ) -> Result<AnalyzeFileOrgResponse, AppError> {
     services::ai_client::analyze_project_file_org(&req, &logger_state)
         .await
-        .map_err(|e| AppError::ai_request_failed(e))
+        .map_err(classify_ai_error)
 }
 
 // ============================================================
@@ -143,7 +176,7 @@ pub async fn test_ai_connection(
 ) -> Result<TestConnectionResult, AppError> {
     services::ai_client::test_connection(&api_key, &api_endpoint, &model, &logger_state)
         .await
-        .map_err(|e| AppError::ai_request_failed(e))
+        .map_err(classify_ai_error)
 }
 
 // ============================================================
@@ -181,7 +214,7 @@ pub async fn chat_with_ai(
             Ok(())
         }
         Err(err_msg) => {
-            let app_err = AppError::ai_request_failed(err_msg.clone());
+            let app_err = classify_ai_error(err_msg.clone());
             let _ = app_handle.emit(
                 "chat-stream-error",
                 StreamErrorPayload {

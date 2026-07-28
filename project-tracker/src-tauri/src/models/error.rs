@@ -64,7 +64,31 @@ impl AppError {
     pub fn ai_timeout() -> Self {
         Self {
             code: "AI_TIMEOUT".into(),
-            message: "AI 服务连接超时，请检查网络设置或稍后重试".into(),
+            message: "AI 处理超时，目录较大时会慢一些，可稍后重试".into(),
+            detail: None,
+        }
+    }
+
+    pub fn ai_connection_failed(detail: impl Into<String>) -> Self {
+        Self {
+            code: "AI_CONNECTION_FAILED".into(),
+            message: "无法连接到 AI 服务，请检查网络连接".into(),
+            detail: Some(detail.into()),
+        }
+    }
+
+    pub fn ai_rate_limited() -> Self {
+        Self {
+            code: "AI_RATE_LIMITED".into(),
+            message: "AI 服务请求过于频繁，请稍后重试".into(),
+            detail: None,
+        }
+    }
+
+    pub fn ai_server_error(status: u16) -> Self {
+        Self {
+            code: "AI_SERVER_ERROR".into(),
+            message: format!("AI 服务暂时不可用（HTTP {}），请稍后重试", status),
             detail: None,
         }
     }
