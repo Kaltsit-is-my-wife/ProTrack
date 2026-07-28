@@ -74,6 +74,7 @@ import {
 import { SettingsPage } from "@/components/SettingsPage";
 import { HiddenFilesDialog } from "@/components/HiddenFilesDialog";
 import { NodeContextMenu } from "@/components/NodeContextMenu";
+import { ProjectContextMenu } from "@/components/ProjectContextMenu";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import {
@@ -925,11 +926,12 @@ function App() {
   const addProject = useAppStore((s) => s.addProject);
   const setProjectTree = useAppStore((s) => s.setProjectTree);
   const setHiddenFiles = useAppStore((s) => s.setHiddenFiles);
+  const removeProject = useAppStore((s) => s.removeProject);
 
   // 隐藏文件对话框
   const [hiddenDialogPath, setHiddenDialogPath] = useState<string | null>(null);
 
-  // ---- 右键上下文菜单 ----
+  // ---- 右键上下文菜单（思维导图节点）----
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -937,6 +939,14 @@ function App() {
     nodePath: string;
     isCollapsed: boolean;
     isDir: boolean;
+  } | null>(null);
+
+  // ---- 右键上下文菜单（项目列表）----
+  const [projectContextMenu, setProjectContextMenu] = useState<{
+    x: number;
+    y: number;
+    projectId: string;
+    projectName: string;
   } | null>(null);
 
   // 子树重排：存储要重排布局的节点路径，在 setNodes 中消费
@@ -2070,6 +2080,16 @@ function App() {
                               : "hover:bg-muted/60"
                           }`}
                           onClick={() => handleSelectProject(p.id)}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            setProjectContextMenu({
+                              x: e.clientX,
+                              y: e.clientY,
+                              projectId: p.id,
+                              projectName: p.name,
+                            });
+                          }}
+                          title="右键查看更多操作"
                         >
                           <div className="flex items-center gap-1.5 font-medium truncate">
                             {isStale && (
@@ -2222,7 +2242,26 @@ function App() {
         </aside>
       </div>
 
-      {/* 右键上下文菜单 */}
+      {/* 右键上下文菜单（项目列表）*/}
+      {projectContextMenu && (
+        <ProjectContextMenu
+          x={projectContextMenu.x}
+          y={projectContextMenu.y}
+          projectName={projectContextMenu.projectName}
+          onClose={() => setProjectContextMenu(null)}
+          onRemove={() => {
+            console.log(
+              "[Project] 右键移除 | id:",
+              projectContextMenu.projectId,
+              "| name:",
+              projectContextMenu.projectName,
+            );
+            removeProject(projectContextMenu.projectId);
+          }}
+        />
+      )}
+
+      {/* 右键上下文菜单（思维导图节点）*/}
       {contextMenu && (
         <NodeContextMenu
           x={contextMenu.x}
