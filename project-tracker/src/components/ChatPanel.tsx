@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { ArrowUp, Copy, RefreshCw } from "lucide-react";
+import { ArrowUp, Copy, RefreshCw, Square } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, type ChatMessage } from "@/store/useAppStore";
 import { chatWithAiStream } from "@/lib/ai";
@@ -43,6 +43,7 @@ export function ChatPanel() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const stopRef = useRef(false);
 
   // ---- 从 store 读取当前项目状态 ----
   const activeProjectId = useAppStore((s) => s.activeProjectId);
@@ -117,6 +118,7 @@ export function ChatPanel() {
 
   const doSend = useCallback(async (text: string) => {
     if (!text || !activeProjectId || !project || !tree || busy) return;
+    stopRef.current = false;
 
     // 1. 添加用户消息
     const userMsg: ChatMessage = {
@@ -159,6 +161,7 @@ export function ChatPanel() {
       useAppStore.getState().settings.dataPath,
       // onChunk — 逐字追加到占位消息
       (chunk: string) => {
+        if (stopRef.current) return;
         if (!fullText) setTyping(false); // 首个 chunk 到达，关掉打字动画
         fullText += chunk;
         const msgs = useAppStore.getState().chatMessages[activeProjectId] ?? [];
@@ -247,13 +250,20 @@ export function ChatPanel() {
     [activeProjectId, doSend],
   );
 
+  const handleStop = useCallback(() => {
+    stopRef.current = true;
+    setBusy(false);
+    setTyping(false);
+  }, []);
+
   const handleBallClick = useCallback(() => {
     if (expanded) {
-      handleSend();
+      if (busy) handleStop();
+      else handleSend();
     } else {
       setExpanded(true);
     }
-  }, [expanded, handleSend]);
+  }, [expanded, busy, handleSend, handleStop]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -365,10 +375,9 @@ export function ChatPanel() {
           type="button"
           className="chat-bar-ball"
           onClick={handleBallClick}
-          disabled={busy}
-          title={expanded ? (busy ? "AI 回复中" : "发送") : "展开输入框"}
+          title={expanded ? (busy ? "停止生成" : "发送") : "展开输入框"}
         >
-          <ArrowUp className="size-4" />
+          {busy ? <Square className="size-3.5" /> : <ArrowUp className="size-4" />}
         </button>
       </div>
     </div>
