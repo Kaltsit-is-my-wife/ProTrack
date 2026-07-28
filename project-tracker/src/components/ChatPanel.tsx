@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { ArrowUp, Copy, RefreshCw, Square } from "lucide-react";
+import { ArrowUp, ChevronLeft, ChevronRight, Copy, Ellipsis, RefreshCw, Square } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, type ChatMessage } from "@/store/useAppStore";
 import { chatWithAiStream } from "@/lib/ai";
@@ -44,6 +44,9 @@ export function ChatPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const stopRef = useRef(false);
+  const [dropdownMsgId, setDropdownMsgId] = useState<string | null>(null);
+  const [versionHistory, setVersionHistory] = useState<Record<string, string[]>>({});
+  const [versionCursor, setVersionCursor] = useState<Record<string, number>>({});
 
   // ---- 从 store 读取当前项目状态 ----
   const activeProjectId = useAppStore((s) => s.activeProjectId);
@@ -102,6 +105,19 @@ export function ChatPanel() {
       document.removeEventListener("pointerdown", handleClick);
     };
   }, [expanded]);
+
+  // 点击外部关闭下拉
+  useEffect(() => {
+    if (!dropdownMsgId) return;
+    const h = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest(".chat-bubble-dropdown") && !t.closest(".chat-bubble-action-btn")) {
+        setDropdownMsgId(null);
+      }
+    };
+    const id = setTimeout(() => document.addEventListener("pointerdown", h), 100);
+    return () => { clearTimeout(id); document.removeEventListener("pointerdown", h); };
+  }, [dropdownMsgId]);
 
   // Escape 收起
   useEffect(() => {
@@ -204,6 +220,17 @@ export function ChatPanel() {
       }
       if (!userText) return;
 
+      // 保存当前版本到历史
+      if (aiMsg.text) {
+        const savedText = aiMsg.text;
+        console.log("[Regen] 存版本 | text:", savedText.slice(0, 40));
+        setVersionHistory(p => {
+          const h = p[aiMsg.id] ?? [];
+          console.log("[Regen] hLen:", h.length, "→", h.length + 1);
+          return { ...p, [aiMsg.id]: [...h, savedText] };
+        });
+        // cursor 不动（始终显示实时版本），历史记录自动增长
+      }
       // 清空当前 AI 消息文本，流式写回同一个 id
       useAppStore.setState({
         chatMessages: {
@@ -213,8 +240,46 @@ export function ChatPanel() {
       });
       streamToTarget(userText, aiMsg.id, false);
     },
-    [activeProjectId, busy, streamToTarget],
+    [activeProjectId, busy, streamToTarget, versionHistory, versionCursor],
   );
+
+  const swapVersion = useCallback((msgId: string, direction: -1 | 1) => {
+    if (!activeProjectId) return;
+    const cur = versionCursor[msgId] ?? 0;
+    const h = versionHistory[msgId] ?? [];
+    const nc = cur + direction;
+    console.log("[VerSwap] dir:", direction, "| cur:", cur, "→ nc:", nc, "| hLen:", h.length, "| h:", [...h]);
+    if (nc < 0 || nc > h.length) { console.log("[VerSwap] 越界"); return; }
+
+    const msgs = useAppStore.getState().chatMessages[activeProjectId] ?? [];
+    const ai = msgs.find(m => m.id === msgId);
+    if (!ai) return;
+
+    // 取目标位置的文本
+    const oldText = cur === 0
+      ? h[h.length - 1]           // 从实时版进入历史：取最近一条历史
+      : nc === 0
+        ? h[h.length - cur]       // 回到实时版：取之前存入的文本
+        : h[h.length - nc];       // 历史间切换
+    console.log("[VerSwap] oldText:", oldText?.slice(0, 40));
+    if (!oldText) { console.log("[VerSwap] oldText 为空"); return; }
+
+    const savedCurText = ai.text;
+    // 数组长度永远不变：cur=0 时和 h[last] 互换，其余替换对应位置
+    setVersionHistory(vh => {
+      const l = [...(vh[msgId] ?? [])];
+      l[cur === 0 ? l.length - 1 : l.length - cur] = savedCurText;
+      console.log("[VerSwap] h:", [...l], "| len:", l.length);
+      return { ...vh, [msgId]: l };
+    });
+    setVersionCursor(p => ({ ...p, [msgId]: nc }));
+    useAppStore.setState({
+      chatMessages: {
+        ...useAppStore.getState().chatMessages,
+        [activeProjectId]: msgs.map(m => m.id === msgId ? { ...m, text: oldText } : m),
+      },
+    });
+  }, [activeProjectId, versionCursor, versionHistory]);
 
   const handleStop = useCallback(() => {
     stopRef.current = true;
@@ -302,6 +367,41 @@ export function ChatPanel() {
                       >
                         <RefreshCw className="size-3" />
                       </button>
+                      <button
+                        type="button"
+                        className="chat-bubble-action-btn"
+                        title="更多"
+                        onClick={(e) => { e.stopPropagation(); setDropdownMsgId(dropdownMsgId === msg.id ? null : msg.id); }}
+                      >
+                        <Ellipsis className="size-3" />
+                      </button>
+                      {dropdownMsgId === msg.id && (
+                        <div className="chat-bubble-dropdown">
+                          {(() => {
+                            const vh = versionHistory[msg.id];
+                            const vc = versionCursor[msg.id] ?? 0;
+                            const total = (vh?.length ?? 0) + 1;
+                            return (
+                              <>
+                                <button type="button" className="chat-bubble-dropdown-item"
+                                  onClick={() => { swapVersion(msg.id, -1); setDropdownMsgId(null); }}
+                                  disabled={total <= 1 || vc <= 0}>
+                                  <ChevronLeft className="size-3.5" />
+                                  <span>上一个回答</span>
+                                </button>
+                                <button type="button" className="chat-bubble-dropdown-item"
+                                  onClick={() => { swapVersion(msg.id, 1); setDropdownMsgId(null); }}
+                                  disabled={total <= 1 || vc >= total - 1}>
+                                  <ChevronRight className="size-3.5" />
+                                  <span>下一个回答</span>
+                                </button>
+                                <div className="chat-bubble-dropdown-sep" />
+                                <span className="chat-bubble-dropdown-hint">{total - vc}/{total}</span>
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
