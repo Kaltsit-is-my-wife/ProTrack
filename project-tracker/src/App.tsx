@@ -14,6 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   Settings,
   FolderOpen,
@@ -1412,14 +1413,22 @@ function App() {
       // 并行两次调用，各自完成时立即更新 UI
       const [core, fileOrg] = await Promise.all([
         analyzeProjectCore(project, tree, dataDir).then((r) => {
-          setCorePartial(r);
+          if (r) setCorePartial(r);
           return r;
         }),
         analyzeProjectFileOrg(project, tree, dataDir).then((r) => {
-          setFileOrgPartial(r.fileOrganization);
+          if (r) setFileOrgPartial(r.fileOrganization);
           return r;
         }),
       ]);
+
+      if (!core || !fileOrg) {
+        toast.error("AI 服务请求失败，请检查网络连接", {
+          description: "AI_REQUEST_FAILED",
+          duration: 5000,
+        });
+        return;
+      }
 
       setAiAnalysis(activeProjectId, {
         analyzedAt: Date.now(),
@@ -1434,6 +1443,10 @@ function App() {
       console.log("[AI:UI] ✅ AI 并行分析完成并已存储");
     } catch (err) {
       console.error("[AI:UI] ❌ AI 分析失败:", err);
+      toast.error("AI 服务请求失败，请检查网络连接", {
+        description: "AI_REQUEST_FAILED",
+        duration: 5000,
+      });
     } finally {
       setAiLoading(activeProjectId, false);
     }

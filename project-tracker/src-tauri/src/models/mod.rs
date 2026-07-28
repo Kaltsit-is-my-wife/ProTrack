@@ -15,3 +15,4 @@
 
 pub mod ai;
 pub mod directory;
+pub mod error;

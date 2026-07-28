@@ -16,6 +16,7 @@
 use std::path::Path;
 
 use crate::models::directory::DirNode;
+use crate::models::error::AppError;
 use crate::utils::logger::Level;
 
 // ============================================================
@@ -27,7 +28,7 @@ pub fn scan_directory(
     path: String,
     max_depth: u32,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<DirNode, String> {
+) -> Result<DirNode, AppError> {
     logger_state.write(
         Level::Info,
         "Scan",
@@ -41,7 +42,7 @@ pub fn scan_directory(
 
     if !root_path.exists() {
         logger_state.write(Level::Error, "Scan", &format!("path not found: {}", path));
-        return Err(format!("路径不存在: {}", path));
+        return Err(AppError::directory_not_found(path));
     }
     if !root_path.is_dir() {
         logger_state.write(
@@ -49,7 +50,7 @@ pub fn scan_directory(
             "Scan",
             &format!("path is not a directory: {}", path),
         );
-        return Err("路径不是目录".into());
+        return Err(AppError::directory_scan_failed("路径不是目录"));
     }
 
     let root_name = root_path
@@ -142,7 +143,7 @@ fn build_subtree(dir: &Path, name: &str, full_path: &str, depth: u32, max_depth:
 pub fn ensure_project_tracker_dir(
     project_path: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let root = Path::new(&project_path);
     if !root.exists() || !root.is_dir() {
         logger_state.write(
@@ -150,13 +151,13 @@ pub fn ensure_project_tracker_dir(
             "ProjectTracker",
             &format!("ensure_project_tracker_dir | 路径无效: {}", project_path),
         );
-        return Err(format!("路径不存在或不是目录: {}", project_path));
+        return Err(AppError::directory_not_found(project_path));
     }
 
     let dir = root.join(".project-tracker");
     if !dir.exists() {
         std::fs::create_dir_all(&dir)
-            .map_err(|e| format!("创建 .project-tracker 失败: {}", e))?;
+            .map_err(|e| AppError::io_error(format!("创建 .project-tracker 失败: {}", e)))?;
 
         // Windows 上 . 开头的目录不会自动隐藏，需设置隐藏属性
         #[cfg(target_os = "windows")]

@@ -20,6 +20,8 @@ use aes_gcm::{
 use base64::prelude::*;
 use sha2::{Digest, Sha256};
 
+use crate::models::error::AppError;
+
 const ENC_PREFIX: &str = "enc:v1:";
 const NONCE_LEN: usize = 12;
 
@@ -44,25 +46,26 @@ fn derive_key() -> [u8; 32] {
 // ============================================================
 
 #[tauri::command]
-pub fn encrypt_setting(plaintext: String) -> Result<String, String> {
+pub fn encrypt_setting(plaintext: String) -> Result<String, AppError> {
     if plaintext.is_empty() {
         return Ok(String::new());
     }
 
     let key = derive_key();
     let cipher =
-        Aes256Gcm::new_from_slice(&key).map_err(|e| format!("创建加密器失败: {}", e))?;
+        Aes256Gcm::new_from_slice(&key)
+            .map_err(|e| AppError::encryption_failed(format!("创建加密器失败: {}", e)))?;
 
     let mut nonce_bytes = [0u8; NONCE_LEN];
-    getrandom::fill(&mut nonce_bytes).map_err(|e| format!("生成随机数失败: {}", e))?;
+    getrandom::fill(&mut nonce_bytes)
+        .map_err(|e| AppError::encryption_failed(format!("生成随机数失败: {}", e)))?;
     #[allow(deprecated)]
     let nonce = Nonce::clone_from_slice(&nonce_bytes);
 
     let ciphertext = cipher
         .encrypt(&nonce, plaintext.as_bytes())
-        .map_err(|e| format!("加密失败: {}", e))?;
+        .map_err(|e| AppError::encryption_failed(format!("加密失败: {}", e)))?;
 
-    // 格式: enc:v1:<base64(nonce || ciphertext)>
     let mut combined = Vec::with_capacity(NONCE_LEN + ciphertext.len());
     combined.extend_from_slice(&nonce_bytes);
     combined.extend_from_slice(&ciphertext);
@@ -75,7 +78,7 @@ pub fn encrypt_setting(plaintext: String) -> Result<String, String> {
 // ============================================================
 
 #[tauri::command]
-pub fn decrypt_setting(stored: String) -> Result<String, String> {
+pub fn decrypt_setting(stored: String) -> Result<String, AppError> {
     if stored.is_empty() {
         return Ok(String::new());
     }
@@ -88,10 +91,10 @@ pub fn decrypt_setting(stored: String) -> Result<String, String> {
     let encoded = stored.strip_prefix(ENC_PREFIX).unwrap_or("");
     let combined = BASE64_STANDARD
         .decode(encoded)
-        .map_err(|e| format!("Base64 解码失败: {}", e))?;
+        .map_err(|e| AppError::decryption_failed(format!("Base64 解码失败: {}", e)))?;
 
     if combined.len() < NONCE_LEN {
-        return Err("加密数据损坏：长度不足".into());
+        return Err(AppError::decryption_failed("加密数据损坏：长度不足"));
     }
 
     let (nonce_bytes, ciphertext) = combined.split_at(NONCE_LEN);
@@ -100,11 +103,13 @@ pub fn decrypt_setting(stored: String) -> Result<String, String> {
 
     let key = derive_key();
     let cipher =
-        Aes256Gcm::new_from_slice(&key).map_err(|e| format!("创建解密器失败: {}", e))?;
+        Aes256Gcm::new_from_slice(&key)
+            .map_err(|e| AppError::decryption_failed(format!("创建解密器失败: {}", e)))?;
 
     let plaintext = cipher
         .decrypt(&nonce, ciphertext)
-        .map_err(|_| "密钥不匹配或数据已损坏，请重新输入 API Key".to_string())?;
+        .map_err(|_| AppError::decryption_failed("密钥不匹配或数据已损坏"))?;
 
-    String::from_utf8(plaintext).map_err(|e| format!("UTF-8 解码失败: {}", e))
+    String::from_utf8(plaintext)
+        .map_err(|e| AppError::decryption_failed(format!("UTF-8 解码失败: {}", e)))
 }

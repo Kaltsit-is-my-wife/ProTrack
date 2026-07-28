@@ -24,6 +24,7 @@ console.log("[Boot] 日志系统就绪");
 import React from "react";
 import "./App.css";
 import ReactDOM from "react-dom/client";
+import { Toaster } from "sonner";
 import App from "./App";
 
 // 恢复持久化状态后再渲染 React
@@ -46,6 +47,18 @@ async function bootstrap() {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <App />
+      <Toaster
+        position="top-right"
+        richColors
+        duration={5000}
+        toastOptions={{
+          style: {
+            fontSize: "13px",
+            padding: "8px 12px",
+            gap: "6px",
+          },
+        }}
+      />
     </React.StrictMode>,
   );
   console.log("[Boot] React 应用已挂载");

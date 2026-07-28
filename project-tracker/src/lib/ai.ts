@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "@/lib/invoke";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { DirNode } from "@/types/directory";
 import type { Project } from "@/types/project";
@@ -98,7 +98,7 @@ export async function analyzeProjectCore(
     dataDir,
     ...getAiOverrides(),
   };
-  return invoke<AnalyzeCoreResponse>("analyze_project_core", { req });
+  return safeInvoke<AnalyzeCoreResponse>("analyze_project_core", { req }, { showError: false }) as Promise<AnalyzeCoreResponse>;
 }
 
 // ============================================================
@@ -122,7 +122,7 @@ export async function analyzeProjectFileOrg(
     dataDir,
     ...getAiOverrides(),
   };
-  return invoke<AnalyzeFileOrgResponse>("analyze_project_file_org", { req });
+  return safeInvoke<AnalyzeFileOrgResponse>("analyze_project_file_org", { req }, { showError: false }) as Promise<AnalyzeFileOrgResponse>;
 }
 
 // ============================================================
@@ -156,9 +156,13 @@ export async function analyzeProject(
   const t0 = performance.now();
 
   const [coreResult, fileOrgResult] = await Promise.all([
-    invoke<AnalyzeCoreResponse>("analyze_project_core", { req }),
-    invoke<AnalyzeFileOrgResponse>("analyze_project_file_org", { req }),
+    safeInvoke<AnalyzeCoreResponse>("analyze_project_core", { req }, { showError: false }),
+    safeInvoke<AnalyzeFileOrgResponse>("analyze_project_file_org", { req }, { showError: false }),
   ]);
+
+  if (!coreResult || !fileOrgResult) {
+    throw new Error("AI 分析失败");
+  }
 
   const elapsed = (performance.now() - t0).toFixed(0);
   console.log(
@@ -314,9 +318,9 @@ export async function chatWithAiStream(
   );
   unlisteners.push(unlistenError);
 
-  // 发起流式请求（命令立即返回）
+  // 发起流式请求（命令立即返回），错误由事件流 chat-stream-error 传递
   const t0 = performance.now();
-  await invoke("chat_with_ai", { req });
+  await safeInvoke("chat_with_ai", { req }, { silent: true });
   const elapsed = (performance.now() - t0).toFixed(0);
   console.log("[AI:Chat] 流式请求已发起 | elapsed:", elapsed + "ms");
 }

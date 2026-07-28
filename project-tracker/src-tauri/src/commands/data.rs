@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::models::error::AppError;
 use crate::services;
 
 // ============================================================
@@ -25,9 +26,11 @@ pub fn save_data_file(
     data_dir: String,
     json: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<(), String> {
-    let path = services::data_files::resolve_data_path(&data_dir, &filename)?;
+) -> Result<(), AppError> {
+    let path = services::data_files::resolve_data_path(&data_dir, &filename)
+        .map_err(|e| AppError::data_save_failed(e))?;
     services::data_files::atomic_write_json(&path, &json, &logger_state)
+        .map_err(|e| AppError::data_save_failed(e))
 }
 
 // ============================================================
@@ -39,9 +42,11 @@ pub fn load_data_file(
     filename: String,
     data_dir: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<Option<String>, String> {
-    let path = services::data_files::resolve_data_path(&data_dir, &filename)?;
+) -> Result<Option<String>, AppError> {
+    let path = services::data_files::resolve_data_path(&data_dir, &filename)
+        .map_err(|e| AppError::data_load_failed(e))?;
     services::data_files::read_json_file(&path, &logger_state)
+        .map_err(|e| AppError::data_load_failed(e))
 }
 
 // ============================================================
@@ -54,9 +59,11 @@ pub fn save_cache(
     data_dir: String,
     json: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<(), String> {
-    let path = services::data_files::resolve_cache_path(&data_dir, &key)?;
+) -> Result<(), AppError> {
+    let path = services::data_files::resolve_cache_path(&data_dir, &key)
+        .map_err(|e| AppError::data_save_failed(e))?;
     services::data_files::atomic_write_json(&path, &json, &logger_state)
+        .map_err(|e| AppError::data_save_failed(e))
 }
 
 // ============================================================
@@ -68,9 +75,11 @@ pub fn load_cache(
     key: String,
     data_dir: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<Option<String>, String> {
-    let path = services::data_files::resolve_cache_path(&data_dir, &key)?;
+) -> Result<Option<String>, AppError> {
+    let path = services::data_files::resolve_cache_path(&data_dir, &key)
+        .map_err(|e| AppError::data_load_failed(e))?;
     services::data_files::read_json_file(&path, &logger_state)
+        .map_err(|e| AppError::data_load_failed(e))
 }
 
 // ============================================================
@@ -81,8 +90,9 @@ pub fn load_cache(
 pub fn clear_cache(
     data_dir: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     services::data_files::clear_cache(&data_dir, &logger_state)
+        .map_err(|e| AppError::cache_clear_failed(e))
 }
 
 // ============================================================
@@ -94,6 +104,7 @@ pub fn export_all_data(
     data_dir: String,
     target_path: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     services::data_files::export_all_data(&data_dir, &target_path, &logger_state)
+        .map_err(|e| AppError::data_export_failed(e))
 }

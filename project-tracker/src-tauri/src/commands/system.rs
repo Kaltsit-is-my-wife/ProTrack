@@ -17,6 +17,7 @@ use std::path::Path;
 use tauri::Manager;
 
 use crate::models::directory::LogEntry;
+use crate::models::error::AppError;
 use crate::utils::logger::Level;
 
 // ============================================================
@@ -27,7 +28,7 @@ use crate::utils::logger::Level;
 pub fn open_in_explorer(
     path: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     logger_state.write(
         Level::Info,
         "Explorer",
@@ -41,7 +42,7 @@ pub fn open_in_explorer(
             "Explorer",
             &format!("path not found: {}", path.display()),
         );
-        return Err(format!("路径不存在: {}", path.display()));
+        return Err(AppError::system_error(format!("路径不存在: {}", path.display())));
     }
 
     #[cfg(target_os = "windows")]
@@ -54,7 +55,7 @@ pub fn open_in_explorer(
         std::process::Command::new("explorer")
             .arg(target)
             .spawn()
-            .map_err(|e| format!("无法打开资源管理器: {}", e))?;
+            .map_err(|e| AppError::system_error(format!("无法打开资源管理器: {}", e)))?;
     }
 
     #[cfg(target_os = "macos")]
@@ -67,7 +68,7 @@ pub fn open_in_explorer(
         std::process::Command::new("open")
             .arg(target)
             .spawn()
-            .map_err(|e| format!("无法打开 Finder: {}", e))?;
+            .map_err(|e| AppError::system_error(format!("无法打开 Finder: {}", e)))?;
     }
 
     #[cfg(target_os = "linux")]
@@ -80,7 +81,7 @@ pub fn open_in_explorer(
         std::process::Command::new("xdg-open")
             .arg(target)
             .spawn()
-            .map_err(|e| format!("无法打开文件管理器: {}", e))?;
+            .map_err(|e| AppError::system_error(format!("无法打开文件管理器: {}", e)))?;
     }
 
     Ok(())
@@ -94,7 +95,7 @@ pub fn open_in_explorer(
 pub fn log_message(
     entry: LogEntry,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let level = match entry.level.as_str() {
         "debug" => Level::Debug,
         "info" => Level::Info,
@@ -111,12 +112,12 @@ pub fn log_message(
 // ============================================================
 
 #[tauri::command]
-pub fn get_data_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub fn get_data_dir(app_handle: tauri::AppHandle) -> Result<String, AppError> {
     app_handle
         .path()
         .app_data_dir()
         .map(|p| p.to_string_lossy().to_string())
-        .map_err(|e| format!("无法获取应用数据目录: {}", e))
+        .map_err(|e| AppError::system_error(format!("无法获取应用数据目录: {}", e)))
 }
 
 // ============================================================

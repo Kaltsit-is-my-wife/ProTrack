@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "@/lib/invoke";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "@/store/useAppStore";
 import {
@@ -94,32 +95,26 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   };
 
   const handleClearCache = async () => {
-    try {
-      await invoke("clear_cache", { dataDir: effectivePath });
-      alert("缓存已清理");
-    } catch (e) {
-      console.error("[Settings] 清理缓存失败:", e);
-      alert("清理缓存失败：" + String(e));
-    }
+    await safeInvoke("clear_cache", { dataDir: effectivePath }, {
+      showSuccess: true,
+      successMessage: "缓存已清理",
+    });
   };
 
   const handleExportData = async () => {
-    try {
-      const targetPath = await save({
-        defaultPath: "project-tracker-export.json",
-        filters: [{ name: "JSON", extensions: ["json"] }],
-        title: "导出全部数据",
-      });
-      if (!targetPath) return; // 用户取消
-      await invoke("export_all_data", {
-        dataDir: effectivePath,
-        targetPath,
-      });
-      alert("数据已导出到：" + targetPath);
-    } catch (e) {
-      console.error("[Settings] 导出数据失败:", e);
-      alert("导出失败：" + String(e));
-    }
+    const targetPath = await save({
+      defaultPath: "project-tracker-export.json",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+      title: "导出全部数据",
+    });
+    if (!targetPath) return; // 用户取消
+    await safeInvoke("export_all_data", {
+      dataDir: effectivePath,
+      targetPath,
+    }, {
+      showSuccess: true,
+      successMessage: "数据导出成功",
+    });
   };
 
   // 预设词条管理
@@ -362,32 +357,32 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
     console.log("[AI:Test] 开始连接测试 | hasApiKey:", !!settings.apiKey);
     setTestStatus("testing");
     setTestMessage("");
-    try {
-      const t0 = performance.now();
-      const result = await invoke<{ ok: boolean; message: string }>(
-        "test_ai_connection",
-        {
-          apiKey: settings.apiKey,
-          apiEndpoint: settings.apiEndpoint ?? "",
-          model: settings.model ?? "",
-        },
-      );
-      const elapsed = (performance.now() - t0).toFixed(0);
-      console.log(
-        "[AI:Test] 测试结果 | ok:",
-        result.ok,
-        "| elapsed:",
-        elapsed + "ms",
-        "| message:",
-        result.message,
-      );
-      setTestStatus(result.ok ? "success" : "error");
-      setTestMessage(result.message);
-    } catch (e) {
-      console.error("[AI:Test] 调用异常 | error:", String(e));
+    const t0 = performance.now();
+    const result = await safeInvoke<{ ok: boolean; message: string }>(
+      "test_ai_connection",
+      {
+        apiKey: settings.apiKey,
+        apiEndpoint: settings.apiEndpoint ?? "",
+        model: settings.model ?? "",
+      },
+      { showError: false }, // 组件自有错误展示
+    );
+    if (!result) {
       setTestStatus("error");
-      setTestMessage(`调用失败：${String(e)}`);
+      setTestMessage("连接测试失败，请检查网络或 API 配置");
+      return;
     }
+    const elapsed = (performance.now() - t0).toFixed(0);
+    console.log(
+      "[AI:Test] 测试结果 | ok:",
+      result.ok,
+      "| elapsed:",
+      elapsed + "ms",
+      "| message:",
+      result.message,
+    );
+    setTestStatus(result.ok ? "success" : "error");
+    setTestMessage(result.message);
   };
 
   return (

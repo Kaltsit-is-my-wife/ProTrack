@@ -19,6 +19,7 @@ use crate::models::ai::{
     AnalyzeCoreResponse, AnalyzeFileOrgResponse, AnalyzeRequest, ChatRequest,
     StreamChunkPayload, StreamDonePayload, StreamErrorPayload, TestConnectionResult,
 };
+use crate::models::error::AppError;
 use crate::services;
 
 // ============================================================
@@ -30,8 +31,9 @@ pub fn save_system_prompt(
     data_dir: String,
     prompt_text: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     services::ai_client::save_system_prompt(&data_dir, &prompt_text, &logger_state)
+        .map_err(|e| AppError::data_save_failed(e))
 }
 
 // ============================================================
@@ -42,8 +44,9 @@ pub fn save_system_prompt(
 pub fn load_system_prompt(
     data_dir: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, AppError> {
     services::ai_client::load_system_prompt(&data_dir, &logger_state)
+        .map_err(|e| AppError::data_load_failed(e))
 }
 
 // ============================================================
@@ -55,8 +58,9 @@ pub fn save_analysis_prompt(
     data_dir: String,
     prompt_text: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     services::ai_client::save_analysis_prompt(&data_dir, &prompt_text, &logger_state)
+        .map_err(|e| AppError::data_save_failed(e))
 }
 
 // ============================================================
@@ -67,8 +71,9 @@ pub fn save_analysis_prompt(
 pub fn load_analysis_prompt(
     data_dir: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, AppError> {
     services::ai_client::load_analysis_prompt(&data_dir, &logger_state)
+        .map_err(|e| AppError::data_load_failed(e))
 }
 
 // ============================================================
@@ -80,8 +85,9 @@ pub fn save_project_rules(
     project_path: String,
     rules: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     services::ai_client::save_project_rules(&project_path, &rules, &logger_state)
+        .map_err(|e| AppError::data_save_failed(e))
 }
 
 // ============================================================
@@ -92,7 +98,7 @@ pub fn save_project_rules(
 pub fn load_project_rules(
     project_path: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, AppError> {
     Ok(services::ai_client::load_project_rules(&project_path, &logger_state))
 }
 
@@ -104,8 +110,10 @@ pub fn load_project_rules(
 pub async fn analyze_project_core(
     req: AnalyzeRequest,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<AnalyzeCoreResponse, String> {
-    services::ai_client::analyze_project_core(&req, &logger_state).await
+) -> Result<AnalyzeCoreResponse, AppError> {
+    services::ai_client::analyze_project_core(&req, &logger_state)
+        .await
+        .map_err(|e| AppError::ai_request_failed(e))
 }
 
 // ============================================================
@@ -116,8 +124,10 @@ pub async fn analyze_project_core(
 pub async fn analyze_project_file_org(
     req: AnalyzeRequest,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<AnalyzeFileOrgResponse, String> {
-    services::ai_client::analyze_project_file_org(&req, &logger_state).await
+) -> Result<AnalyzeFileOrgResponse, AppError> {
+    services::ai_client::analyze_project_file_org(&req, &logger_state)
+        .await
+        .map_err(|e| AppError::ai_request_failed(e))
 }
 
 // ============================================================
@@ -130,8 +140,10 @@ pub async fn test_ai_connection(
     api_endpoint: String,
     model: String,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<TestConnectionResult, String> {
-    services::ai_client::test_connection(&api_key, &api_endpoint, &model, &logger_state).await
+) -> Result<TestConnectionResult, AppError> {
+    services::ai_client::test_connection(&api_key, &api_endpoint, &model, &logger_state)
+        .await
+        .map_err(|e| AppError::ai_request_failed(e))
 }
 
 // ============================================================
@@ -143,10 +155,9 @@ pub async fn chat_with_ai(
     req: ChatRequest,
     app_handle: tauri::AppHandle,
     logger_state: tauri::State<'_, crate::utils::logger::Logger>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let project_id = req.project_id.clone();
 
-    // 调用 service 层的流式聊天，所有 HTTP / SSE 逻辑在 service 中
     let result = services::ai_client::chat_stream(&req, &logger_state, |chunk| {
         let _ = app_handle.emit(
             "chat-stream-chunk",
@@ -170,14 +181,15 @@ pub async fn chat_with_ai(
             Ok(())
         }
         Err(err_msg) => {
+            let app_err = AppError::ai_request_failed(err_msg.clone());
             let _ = app_handle.emit(
                 "chat-stream-error",
                 StreamErrorPayload {
                     project_id: project_id.clone(),
-                    error: err_msg.clone(),
+                    error: err_msg,
                 },
             );
-            Err(err_msg)
+            Err(app_err)
         }
     }
 }
