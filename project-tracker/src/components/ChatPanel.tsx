@@ -357,68 +357,86 @@ export function ChatPanel() {
               return (
               <div
                 key={msg.id}
-                className={`chat-bubble-row ${msg.role === "user" ? "is-user" : "is-ai"}`}
+                className={`group/message chat-bubble-row ${msg.role === "user" ? "is-user" : "is-ai"}`}
               >
-                <div className="chat-bubble">
-                  {msg.role === "ai" ? (
-                    <MarkdownRenderer content={msg.text} />
-                  ) : (
-                    <span className="chat-bubble-text">{msg.text}</span>
-                  )}
-                  {msg.role === "ai" && msg.text && (
-                    <div className="chat-bubble-actions">
-                      <button
-                        type="button"
-                        className="chat-bubble-action-btn"
-                        title="复制"
-                        onClick={() => handleCopy(msg.text)}
-                      >
-                        <Copy className="size-3" />
-                      </button>
-                      <button
-                        type="button"
-                        className="chat-bubble-action-btn"
-                        title="重新生成"
-                        onClick={() => handleRegenerate(messages.indexOf(msg))}
-                        disabled={busy}
-                      >
-                        <RefreshCw className="size-3" />
-                      </button>
-                      <button
-                        type="button"
-                        className="chat-bubble-action-btn"
-                        title="更多"
-                        onClick={(e) => { e.stopPropagation(); setDropdownMsgId(dropdownMsgId === msg.id ? null : msg.id); }}
-                      >
-                        <Ellipsis className="size-3" />
-                      </button>
-                      {dropdownMsgId === msg.id && bi && (
-                        <div className="chat-bubble-dropdown">
-                          <button type="button" className="chat-bubble-dropdown-item"
-                            onClick={() => { handleBranchNav(bi.userMsgId, 1); setDropdownMsgId(null); }}
-                            disabled={bi.activeIdx <= 0}>
-                            <ChevronLeft className="size-3.5" />
-                            <span>上一个回答</span>
-                          </button>
-                          <button type="button" className="chat-bubble-dropdown-item"
-                            onClick={() => { handleBranchNav(bi.userMsgId, -1); setDropdownMsgId(null); }}
-                            disabled={bi.activeIdx >= bi.total - 1}>
-                            <ChevronRight className="size-3.5" />
-                            <span>下一个回答</span>
-                          </button>
-                          <div className="chat-bubble-dropdown-sep" />
-                          <span className="chat-bubble-dropdown-hint">{bi.activeIdx + 1}/{bi.total}</span>
-                        </div>
-                      )}
+                {msg.role === "user" ? (
+                  <>
+                    <div className="chat-bubble">
+                      <span className="chat-bubble-text">{msg.text}</span>
                     </div>
-                  )}
-                </div>
-                <span className="chat-bubble-time">
-                  {new Date(msg.time).toLocaleTimeString("zh-CN", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
+                    <span className="chat-bubble-time">
+                      {new Date(msg.time).toLocaleTimeString("zh-CN", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </>
+                ) : (
+                  <div className="flex min-w-0 flex-col gap-1.5">
+                    <div className="chat-bubble">
+                      <MarkdownRenderer content={msg.text} />
+                    </div>
+                    {msg.text && (
+                      <div className="opacity-0 transition-opacity duration-150 group-hover/message:opacity-100 flex items-center gap-1.5 min-w-0">
+                        {/* 版本导航 */}
+                        <div className="flex items-center gap-0.5">
+                          <button type="button" className="chat-bubble-action-btn"
+                            onClick={() => bi && handleBranchNav(bi.userMsgId, -1)}
+                            disabled={!bi || bi.activeIdx <= 0}>
+                            <ChevronLeft className="size-3" />
+                          </button>
+                          {bi && <span className="chat-bubble-version-badge">{bi.activeIdx + 1}/{bi.total}</span>}
+                          <button type="button" className="chat-bubble-action-btn"
+                            onClick={() => bi && handleBranchNav(bi.userMsgId, 1)}
+                            disabled={!bi || bi.activeIdx >= bi.total - 1}>
+                            <ChevronRight className="size-3" />
+                          </button>
+                        </div>
+                        {/* 操作按钮 */}
+                        <button type="button" className="chat-bubble-action-btn" title="复制"
+                          onClick={() => handleCopy(msg.text)}>
+                          <Copy className="size-3" />
+                        </button>
+                        <button type="button" className="chat-bubble-action-btn" title="重新生成"
+                          onClick={() => handleRegenerate(messages.indexOf(msg))} disabled={busy}>
+                          <RefreshCw className="size-3" />
+                        </button>
+                        {/* 更多 + 下拉 */}
+                        <div className="relative">
+                          <button type="button" className="chat-bubble-action-btn" title="更多"
+                            onClick={(e) => { e.stopPropagation(); setDropdownMsgId(dropdownMsgId === msg.id ? null : msg.id); }}>
+                            <Ellipsis className="size-3" />
+                          </button>
+                          {dropdownMsgId === msg.id && bi && (
+                            <div className="chat-bubble-dropdown">
+                              <button type="button" className="chat-bubble-dropdown-item"
+                                onClick={() => { handleBranchNav(bi.userMsgId, -1); setDropdownMsgId(null); }}
+                                disabled={bi.activeIdx <= 0}>
+                                <ChevronLeft className="size-3.5" />
+                                <span>上一个回答</span>
+                              </button>
+                              <button type="button" className="chat-bubble-dropdown-item"
+                                onClick={() => { handleBranchNav(bi.userMsgId, 1); setDropdownMsgId(null); }}
+                                disabled={bi.activeIdx >= bi.total - 1}>
+                                <ChevronRight className="size-3.5" />
+                                <span>下一个回答</span>
+                              </button>
+                              <div className="chat-bubble-dropdown-sep" />
+                              <span className="chat-bubble-dropdown-hint">{bi.activeIdx + 1}/{bi.total}</span>
+                            </div>
+                          )}
+                        </div>
+                        {/* 时间 */}
+                        <span className="text-[10px] text-muted-foreground ml-auto">
+                          {new Date(msg.time).toLocaleTimeString("zh-CN", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )})
         )}
