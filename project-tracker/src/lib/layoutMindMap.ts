@@ -18,13 +18,11 @@ import type { ElkNode, ElkExtendedEdge } from "elkjs";
 import type { Node, Edge } from "reactflow";
 import type { DirNode } from "@/types/directory";
 import { filterChildren } from "@/lib/filterRules";
-
-// ============================================================
-// 节点尺寸常量（elkjs 布局前必须指定）
-// ============================================================
-
-const NODE_WIDTH = 220;
-const NODE_HEIGHT = 32;
+import {
+  MINDMAP_NODE_WIDTH,
+  MINDMAP_NODE_HEIGHT,
+  MINDMAP_MIN_NODE_GAP,
+} from "@/lib/constants";
 
 // ============================================================
 // 布局选项
@@ -140,9 +138,8 @@ export async function layoutMindMap(
   console.log("[ELK:layout] took:", (t3 - t2).toFixed(0), "ms", "| spacing:", nodeSpacing ?? "default");
 
   // 3. 后处理：强制同级节点最小垂直间距，消除重叠
-  const minGap = NODE_HEIGHT + 30;
-  enforceMinSpacing(layouted, minGap);
-  console.log("[ELK:spacing] enforced min gap:", minGap, "px");
+  enforceMinSpacing(layouted, MINDMAP_MIN_NODE_GAP);
+  console.log("[ELK:spacing] enforced min gap:", MINDMAP_MIN_NODE_GAP, "px");
 
   // 4. 转换为 React Flow 格式
   const { nodes, edges } = elkToReactFlow(layouted);
@@ -211,8 +208,8 @@ function buildElkGraph(
     // 当前节点（layoutOptions 携带 is_dir + 精确深度）
     flatNodes.push({
       id: node.path,
-      width: NODE_WIDTH,
-      height: NODE_HEIGHT,
+      width: MINDMAP_NODE_WIDTH,
+      height: MINDMAP_NODE_HEIGHT,
       labels: [{ text: node.name }],
       layoutOptions: { isDir: node.isDir ? "true" : "false", depth: String(depth) },
     });
@@ -224,8 +221,8 @@ function buildElkGraph(
       const hiddenId = `${node.path}::__hidden__`;
       flatNodes.push({
         id: hiddenId,
-        width: NODE_WIDTH,
-        height: NODE_HEIGHT,
+        width: MINDMAP_NODE_WIDTH,
+        height: MINDMAP_NODE_HEIGHT,
         labels: [{ text: `已隐藏 ${removedCount} 个` }],
         layoutOptions: { isDir: "false", isHidden: "true", depth: String(depth + 1) },
       });
@@ -251,8 +248,8 @@ function buildElkGraph(
       const moreId = `${node.path}::__more__`;
       flatNodes.push({
         id: moreId,
-        width: NODE_WIDTH,
-        height: NODE_HEIGHT,
+        width: MINDMAP_NODE_WIDTH,
+        height: MINDMAP_NODE_HEIGHT,
         labels: [{ text: `+${remaining} more` }],
       });
       flatEdges.push({
@@ -362,7 +359,7 @@ function enforceMinSpacing(root: ElkNode, minGap: number) {
     for (let i = 1; i < group.length; i++) {
       const prev = group[i - 1];
       const curr = group[i];
-      const prevBottom = (prev.y ?? 0) + (prev.height ?? NODE_HEIGHT);
+      const prevBottom = (prev.y ?? 0) + (prev.height ?? MINDMAP_NODE_HEIGHT);
       const currTop = curr.y ?? 0;
       const gap = currTop - prevBottom;
 

@@ -24,6 +24,17 @@ use crate::utils::logger::{Level, Logger};
 use crate::services::prompt_manager;
 
 // ============================================================
+// 超时常量（遵循 docs/13-constant-principle.md）
+// ============================================================
+
+/// 连接测试超时 (s)
+const TEST_CONNECTION_TIMEOUT_SECS: u64 = 15;
+/// 流式聊天超时 (s)
+const CHAT_STREAM_TIMEOUT_SECS: u64 = 120;
+/// 分析请求超时 (s)
+const ANALYSIS_TIMEOUT_SECS: u64 = 150;
+
+// ============================================================
 // 内部类型 — HTTP API 通信（不对外暴露）
 // ============================================================
 
@@ -201,7 +212,7 @@ pub async fn test_connection(
 
     // ---- 构建 HTTP 请求 ----
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(TEST_CONNECTION_TIMEOUT_SECS))
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
@@ -429,7 +440,7 @@ where
 
     // ---- 构建流式 HTTP 请求 ----
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
+        .timeout(std::time::Duration::from_secs(CHAT_STREAM_TIMEOUT_SECS))
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
@@ -622,7 +633,7 @@ async fn call_ai_for_analysis(
     }
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(150))
+        .timeout(std::time::Duration::from_secs(ANALYSIS_TIMEOUT_SECS))
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
@@ -749,7 +760,7 @@ async fn call_ai_for_analysis(
         Err(e) => {
             logger.write(Level::Error, tag, &format!("request failed | {}", e));
             let msg = if e.is_timeout() {
-                "AI 分析超时（150s），请稍后重试".to_string()
+                format!("AI 分析超时（{}s），请稍后重试", ANALYSIS_TIMEOUT_SECS)
             } else if e.is_connect() {
                 "无法连接到 AI 服务，请检查网络".to_string()
             } else {

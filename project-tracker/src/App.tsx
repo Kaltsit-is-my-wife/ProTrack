@@ -59,18 +59,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { MindMapNode, HiddenMarkerNode } from "@/components/MindMapNode";
 import { DetailPanel } from "@/components/DetailPanel";
 
-// ============================================================
-// 常量
-// ============================================================
-
-const DEPTH_OPTIONS = [
-  { value: "0", label: "仅根目录" },
-  { value: "1", label: "深度 1" },
-  { value: "2", label: "深度 2" },
-  { value: "3", label: "深度 3" },
-  { value: "4", label: "深度 4" },
-  { value: "5", label: "深度 5" },
-];
+import { DEPTH_OPTIONS, PANEL_LEFT_DEFAULT_WIDTH, PANEL_RIGHT_DEFAULT_WIDTH } from "@/lib/constants";
 
 const initialNodes: Node[] = [];
 const initialEdges: Edge[] = [];
@@ -139,13 +128,13 @@ function App() {
 
   // ---- 面板宽度 ----
   const leftPanel = usePanelResize({
-    initialWidth: 280,
+    initialWidth: PANEL_LEFT_DEFAULT_WIDTH,
     minWidth: 180,
     maxWidth: 500,
     direction: 1,
   });
   const rightPanel = usePanelResize({
-    initialWidth: 320,
+    initialWidth: PANEL_RIGHT_DEFAULT_WIDTH,
     minWidth: 220,
     maxWidth: 600,
     direction: -1,

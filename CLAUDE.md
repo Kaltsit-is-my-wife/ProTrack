@@ -50,45 +50,91 @@ cd src-tauri && cargo add <crate>
 
 ```
 project-tracker/
-├── src/                     # React frontend (TypeScript)
-│   ├── main.tsx             # Entry point, imports App.css, mounts <App />
-│   ├── App.tsx              # Root component (Tauri IPC demo — to be replaced)
-│   ├── App.css              # Global styles (shadcn CSS vars, dark mode, Geist font)
-│   ├── components/ui/       # shadcn/ui components (11 installed)
-│   │   ├── button.tsx       #   Based on @base-ui/react/button
-│   │   ├── dialog.tsx       #   Based on @base-ui/react/dialog
-│   │   ├── select.tsx       #   Based on @base-ui/react/select
-│   │   ├── switch.tsx       #   Based on @base-ui/react/switch
-│   │   ├── scroll-area.tsx  #   Based on @base-ui/react/scroll-area
-│   │   ├── separator.tsx    #   Based on @base-ui/react/separator
-│   │   ├── card.tsx         #   Pure div-based
-│   │   ├── input.tsx        #   Native input wrapper
-│   │   ├── label.tsx        #   Native label wrapper
-│   │   ├── textarea.tsx     #   Native textarea wrapper
-│   │   └── badge.tsx        #   Pure div-based
-│   └── lib/utils.ts         # cn() helper (clsx + tailwind-merge)
-├── src-tauri/               # Rust backend (Tauri)
+├── src/                           # React frontend (TypeScript)
+│   ├── main.tsx                   # Entry point: initLogger → initPersistence → mount <App />
+│   ├── App.tsx                    # Root component: three-column layout + page routing
+│   ├── App.css                    # Global styles (theme vars, panel layout, mind map, chat)
+│   ├── components/                # Business components
+│   │   ├── ui/                    #   shadcn/ui primitives (button, dialog, select, …)
+│   │   ├── ChatPanel.tsx          #   AI chat panel (streaming, version nav, stop)
+│   │   ├── SettingsPage.tsx       #   Settings (AI config, prompts, data management)
+│   │   ├── DetailPanel.tsx        #   Right panel: project details + AI analysis tabs
+│   │   ├── AiAnalysisContent.tsx  #   AI analysis results + history
+│   │   ├── MindMapNode.tsx        #   Custom React Flow nodes (mind map + hidden marker)
+│   │   ├── ErrorBoundary.tsx      #   Crash isolation per UI region
+│   │   ├── ProjectContextMenu.tsx #   Right-click menu on project list
+│   │   ├── NodeContextMenu.tsx    #   Right-click menu on mind map nodes
+│   │   ├── IgnoreRulesDialog.tsx  #   Per-project exclude rules editor
+│   │   ├── HiddenFilesDialog.tsx  #   Manage hidden files
+│   │   ├── RulesEditDialog.tsx    #   Edit per-project AI rules (Layer 3)
+│   │   └── MarkdownRenderer.tsx   #   Markdown → JSX
+│   ├── hooks/                     # Custom Hooks
+│   │   ├── useAiAnalysis.ts       #   AI analysis trigger + timer
+│   │   ├── useDirectoryRefresh.ts #   Project add / refresh / switch
+│   │   ├── useMindMapLayout.ts    #   ELK layout + snapshot + collapse
+│   │   ├── useNodeActions.ts      #   Node delete / hide / double-click
+│   │   ├── usePanelResize.ts      #   Horizontal panel drag resize
+│   │   ├── useVerticalResize.ts   #   Vertical panel drag resize
+│   │   └── useTheme.ts           #   Theme toggle (light / dark / system)
+│   ├── lib/                       # Pure functions (no React dependency)
+│   │   ├── ai.ts                  #   AI API calls (analyze, chat, streaming)
+│   │   ├── invoke.ts              #   safeInvoke wrapper (error → Toast)
+│   │   ├── logger.ts              #   Frontend logger (console → IPC → Rust)
+│   │   ├── persistence.ts         #   Multi-tier data persistence
+│   │   ├── layoutMindMap.ts       #   ELK.js tree layout engine
+│   │   ├── fingerprint.ts         #   Directory change detection
+│   │   ├── filterRules.ts         #   Auto-hide noise files
+│   │   └── utils.ts              #   cn() classname helper
+│   ├── store/
+│   │   └── useAppStore.ts         #   Zustand global state
+│   └── types/
+│       ├── project.ts             #   Project, ProjectStatus types
+│       └── directory.ts           #   DirNode type
+│
+├── src-tauri/                     # Rust backend (Tauri v2)
 │   ├── src/
-│   │   ├── main.rs          # Binary entry: calls project_tracker_lib::run()
-│   │   └── lib.rs           # Builder setup: plugins + commands
-│   ├── Cargo.toml           # Rust deps (tauri, plugins, serde, serde_json)
-│   ├── tauri.conf.json      # Window config, dev/build commands, CSP=null
-│   ├── capabilities/default.json  # Permissions: core, opener, store, dialog, shell
-│   └── icons/               # App icons
-├── docs/                    # 📚 API reference docs for all major dependencies
+│   │   ├── main.rs                #   Binary entry
+│   │   ├── lib.rs                 #   Plugin setup + command registration
+│   │   ├── commands/              #   #[tauri::command] thin wrappers
+│   │   │   ├── ai.rs              #     AI: analyze, chat, test_connection
+│   │   │   ├── data.rs            #     Data: save/load JSON, cache, export
+│   │   │   ├── directory.rs       #     Directory: scan, ignore rules
+│   │   │   ├── system.rs          #     System: open explorer, log, data dir
+│   │   │   └── crypto.rs          #     Crypto: AES-256-GCM encrypt/decrypt
+│   │   ├── models/                #   Pure data structs (Serialize / Deserialize)
+│   │   │   ├── ai.rs              #     AnalyzeRequest, ChatRequest, responses
+│   │   │   ├── directory.rs       #     DirNode, LogEntry
+│   │   │   └── error.rs           #     AppError (code + message + detail)
+│   │   ├── services/              #   Business logic
+│   │   │   ├── ai_client.rs       #     HTTP client, SSE streaming, JSON parsing
+│   │   │   ├── prompt_manager.rs  #     Prompt 3-layer management (L1/L2/L3)
+│   │   │   └── data_files.rs      #     Atomic file I/O, cache, export
+│   │   └── utils/
+│   │       └── logger.rs          #     Date-rotating file logger
+│   ├── Cargo.toml
+│   ├── tauri.conf.json
+│   └── capabilities/default.json
+│
+├── docs/                          # Reference documentation
 │   ├── 01-tauri-frontend-api.md
 │   ├── 02-tauri-backend-command.md
 │   ├── 03-react-flow-v11-api.md
 │   ├── 04-zustand-v5-api.md
 │   ├── 05-elkjs-api.md
-│   └── 06-shadcn-ui-components.md
-├── index.html               # Vite entry HTML
-├── vite.config.ts           # Vite config (port 1420, @/ path alias)
-├── tailwind.config.js       # Tailwind v3 config (shadcn color mappings)
-├── tailwindcss.config.js    # Incomplete config (possible remnant, verify before deleting)
-├── postcss.config.js        # PostCSS with tailwindcss + autoprefixer
-├── components.json          # shadcn v4 config (base-nova, neutral, lucide icons)
-└── package.json             # Frontend scripts and dependencies
+│   ├── 06-shadcn-ui-components.md
+│   ├── 07-2026-AI-API-interface-condition.md
+│   ├── 08-rust-backend-principles.md
+│   ├── 09-data-management-principles.md
+│   ├── 10-project-report.md
+│   ├── 11-frontend-principles.md
+│   └── 12-log-principles.md
+│
+├── index.html
+├── vite.config.ts
+├── tailwind.config.js
+├── postcss.config.js
+├── components.json
+└── package.json
 ```
 
 ### Tauri Plugin Registration (lib.rs)
@@ -134,7 +180,7 @@ The `ready.md` file outlines the full product plan. For detailed API references,
 
 拓扑：外层 projectTracker/ = Git 仓库根（.git 在此）= VS Code 工作区根 = cwd。内层 project-tracker/ = 实际代码（Tauri+Vite）。全仓库只有一份 .gitignore，在外层；内层禁止存在 .gitignore。本规范文档位于外层 CLAUDE.md（会话启动即加载）。
 
-必须被忽略、绝不进 git：外层壳目录 .claude/、testRoaming/；以及 .env、node_modules/、dist/、dist-ssr/、src-tauri/target/、src-tauri/gen/、*.pem/*.key/*.p12/*.pfx、*.local。
+必须被忽略、绝不进 git：外层壳目录 .claude/、testRoaming/、userRoaming/；以及 .env、node_modules/、dist/、dist-ssr/、src-tauri/target/、src-tauri/gen/、*.pem/*.key/*.p12/*.pfx、*.local。
 
 DO：只改外层这一份 .gitignore；优先用无路径前缀模式（如 node_modules/，匹配任意层级罩住内层），需精确定位内层时用 project-tracker/... 相对前缀；改规则先于 git add，已追踪文件需先 git rm -r --cached；提交前用 git check-ignore -v <path> 验证（有输出=已忽略，无输出=危险）。
 
@@ -232,6 +278,42 @@ models/    → 纯数据结构，不依赖 services/ 或 commands/
 - 统一用 `safeInvoke`，不裸调 `invoke`
 - 异步必须给反馈（Spinner、按钮禁用）
 - 后端返回数据做防御性校验
+
+## 配置与常量管理规范（基于 docs/13-constant-principle.md）
+
+### 核心区分
+
+| 类型 | 定义 | 示例 |
+|------|------|------|
+| **配置** | 运行时可变，用户/环境可定制 | API 端点、模型名、默认导图深度、数据路径 |
+| **常量** | 生命周期内固定不变 | 最大重试次数、防抖延迟、超时时间、错误码前缀 |
+
+### 存放位置
+
+- **前端环境变量**：`.env`（开发期，不入 git）
+- **前端运行时配置**：`useAppStore.ts` 的 `settings` 字段
+- **前端常量**：`src/lib/constants.ts`（集中管理，禁止散落）
+- **Rust 默认值**：相关模块顶部 `const` 声明（SCREAMING_SNAKE_CASE）
+
+### 优先级覆盖（高→低）
+
+1. 用户运行时设置（设置页 / app-state.json）
+2. 项目级配置（`.project-tracker/ignore` 等）
+3. 环境变量（`.env`）
+4. 代码级硬编码默认值（兜底）
+
+### 命名规范
+
+- 常量：`SCREAMING_SNAKE_CASE`（`MAX_SCAN_DEPTH`、`DEBOUNCE_DELAY_MS`）
+- 配置键：`camelCase`（`apiEndpoint`、`defaultMapDepth`）
+- 相关常量必须分组 + 注释
+
+### 红线
+
+- 禁止硬编码 API Key / 密码
+- 敏感配置落盘必须加密（AES-256-GCM）
+- 日志必须对敏感字段脱敏
+- 任何配置必须有兜底默认值
 
 ## 日志规范（基于 docs/12-log-principles.md，前后端必须遵守）
 

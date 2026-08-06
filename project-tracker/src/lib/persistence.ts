@@ -29,15 +29,14 @@
 import { Store } from "@tauri-apps/plugin-store";
 import { invoke } from "@tauri-apps/api/core";
 import { logger } from "@/lib/logger";
+import {
+  PERSIST_DEBOUNCE_MS,
+  PERSIST_STORE_PATH,
+  PERSIST_BUSINESS_FILE,
+  PERSIST_SNAPSHOTS_CACHE_KEY,
+} from "@/lib/constants";
 import { useAppStore, type AppState, type AiAnalysis } from "@/store/useAppStore";
 import type { ProjectSnapshot } from "@/store/useAppStore";
-
-const OLD_STORE_PATH = "app-state.json";
-const SAVE_DEBOUNCE = 500;
-
-// 业务数据文件名
-const BUSINESS_FILE = "projects.json";
-const SNAPSHOTS_CACHE_KEY = "snapshots";
 
 let configStore: Store | null = null;
 let configSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -75,7 +74,7 @@ interface OldPersistedSettings {
 async function loadConfig(): Promise<AppState["settings"] | null> {
   try {
     logger.info("Persistence", "[Persistence] 加载配置: app-state.json");
-    const s = await Store.load(OLD_STORE_PATH, { defaults: {}, autoSave: false });
+    const s = await Store.load(PERSIST_STORE_PATH, { defaults: {}, autoSave: false });
     configStore = s;
 
     // 先尝试新格式（settings 顶层 key）
@@ -148,7 +147,7 @@ async function loadBusinessData(dataDir: string): Promise<BusinessData | null> {
   try {
     logger.info("Persistence", "[Persistence] 加载业务数据:", dataDir);
     const json = await invoke<string | null>("load_data_file", {
-      filename: BUSINESS_FILE,
+      filename: PERSIST_BUSINESS_FILE,
       dataDir,
     });
 
@@ -196,7 +195,7 @@ async function loadCache(dataDir: string): Promise<Record<string, ProjectSnapsho
 
   try {
     const json = await invoke<string | null>("load_cache", {
-      key: SNAPSHOTS_CACHE_KEY,
+      key: PERSIST_SNAPSHOTS_CACHE_KEY,
       dataDir,
     });
 
@@ -220,7 +219,7 @@ async function migrateFromOldStore(): Promise<{
 } | null> {
   try {
     logger.info("Persistence", "[Persistence] 尝试从旧格式迁移...");
-    const s = await Store.load(OLD_STORE_PATH, { defaults: {}, autoSave: false });
+    const s = await Store.load(PERSIST_STORE_PATH, { defaults: {}, autoSave: false });
     const raw = await s.get<{
       projects?: unknown[];
       projectTrees?: Record<string, unknown>;
@@ -273,7 +272,7 @@ async function migrateFromOldStore(): Promise<{
 
 function scheduleConfigSave() {
   if (configSaveTimer) clearTimeout(configSaveTimer);
-  configSaveTimer = setTimeout(() => doSaveConfig(), SAVE_DEBOUNCE);
+  configSaveTimer = setTimeout(() => doSaveConfig(), PERSIST_DEBOUNCE_MS);
 }
 
 async function doSaveConfig() {
@@ -302,7 +301,7 @@ async function doSaveConfig() {
 
 function scheduleBusinessSave() {
   if (businessSaveTimer) clearTimeout(businessSaveTimer);
-  businessSaveTimer = setTimeout(() => doSaveBusiness(), SAVE_DEBOUNCE);
+  businessSaveTimer = setTimeout(() => doSaveBusiness(), PERSIST_DEBOUNCE_MS);
 }
 
 async function doSaveBusiness() {
@@ -320,7 +319,7 @@ async function doSaveBusiness() {
     };
     const json = JSON.stringify(data);
     await invoke("save_data_file", {
-      filename: BUSINESS_FILE,
+      filename: PERSIST_BUSINESS_FILE,
       dataDir,
       json,
     });
@@ -335,7 +334,7 @@ async function doSaveBusiness() {
 
 function scheduleCacheSave() {
   if (cacheSaveTimer) clearTimeout(cacheSaveTimer);
-  cacheSaveTimer = setTimeout(() => doSaveCache(), SAVE_DEBOUNCE);
+  cacheSaveTimer = setTimeout(() => doSaveCache(), PERSIST_DEBOUNCE_MS);
 }
 
 async function doSaveCache() {
@@ -345,7 +344,7 @@ async function doSaveCache() {
   try {
     const snapshots = useAppStore.getState().projectSnapshots;
     await invoke("save_cache", {
-      key: SNAPSHOTS_CACHE_KEY,
+      key: PERSIST_SNAPSHOTS_CACHE_KEY,
       dataDir,
       json: JSON.stringify(snapshots),
     });
@@ -391,13 +390,13 @@ export async function initPersistence(): Promise<void> {
       if (saveDir) {
         logger.info("Persistence", "[Persistence] 迁移数据写入:", saveDir);
         invoke("save_data_file", {
-          filename: BUSINESS_FILE,
+          filename: PERSIST_BUSINESS_FILE,
           dataDir: saveDir,
           json: JSON.stringify(business),
         }).catch((err) => logger.error("Persistence", "[Persistence] 迁移保存业务数据失败:", err));
 
         invoke("save_cache", {
-          key: SNAPSHOTS_CACHE_KEY,
+          key: PERSIST_SNAPSHOTS_CACHE_KEY,
           dataDir: saveDir,
           json: JSON.stringify(snapshots),
         }).catch((err) => logger.error("Persistence", "[Persistence] 迁移保存缓存失败:", err));
@@ -440,5 +439,5 @@ export async function initPersistence(): Promise<void> {
     scheduleBusinessSave();
     scheduleCacheSave();
   });
-  console.log("[Persistence] 自动保存订阅已注册 (debounce:", SAVE_DEBOUNCE, "ms)");
+  console.log("[Persistence] 自动保存订阅已注册 (debounce:", PERSIST_DEBOUNCE_MS, "ms)");
 }
