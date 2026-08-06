@@ -697,7 +697,13 @@ async fn call_ai_for_analysis(
                 return Err(err_msg);
             }
 
-            let body_text = r.text().await.unwrap_or_default();
+            let body_text = match r.text().await {
+                Ok(t) => t,
+                Err(e) => {
+                    logger.write(Level::Error, tag, &format!("读取响应体失败: {}", e));
+                    return Err(format!("AI 服务响应读取失败: {}", e));
+                }
+            };
             logger.write(Level::Debug, tag, &format!("raw response | len: {}", body_text.len()));
 
             // 解析 API 外层 JSON
@@ -723,8 +729,34 @@ async fn call_ai_for_analysis(
             }
             .unwrap_or("");
 
-            if content.is_empty() {
-                logger.write(Level::Warn, tag, "AI 返回空内容");
+            // 容错：如果标准路径提取为空，存档 body_text 并记录结构
+            if content.is_empty() && !config.is_anthropic_native {
+                logger.write(
+                    Level::Warn,
+                    tag,
+                    &format!("标准 content 提取为空 | parsed keys: {:?}",
+                        parsed.as_object().map(|o| o.keys().collect::<Vec<_>>())),
+                );
+                // 存档原始 body_text（即使 content 为空也可能有价值）
+                if !req.data_dir.is_empty() {
+                    if let Ok(path) = crate::services::data_files::resolve_ai_debug_path(
+                        &req.data_dir,
+                        &format!("{}_{}", req.project_name, tag.split(':').next_back().unwrap_or("analysis")),
+                    ) {
+                        let debug_data = serde_json::json!({
+                            "timestamp": chrono_iso_now(),
+                            "project_name": req.project_name,
+                            "project_id": req.project_id,
+                            "model": config.model,
+                            "tag": tag,
+                            "raw_body": body_text,
+                            "error": "content extraction returned empty",
+                        });
+                        if let Ok(json) = serde_json::to_string_pretty(&debug_data) {
+                            let _ = crate::services::data_files::atomic_write_json(&path, &json, logger);
+                        }
+                    }
+                }
                 return Err("AI 返回了空内容，请重试".into());
             }
 

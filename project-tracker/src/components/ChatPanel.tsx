@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { ArrowUp, ChevronLeft, ChevronRight, Copy, Ellipsis, RefreshCw, Square } from "lucide-react";
+import { ArrowUp, ChevronLeft, ChevronRight, Copy, Ellipsis, Loader2, RefreshCw, Square, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, type ChatMessage } from "@/store/useAppStore";
 import { chatWithAiStream } from "@/lib/ai";
@@ -36,7 +36,8 @@ function nextId(): string {
 export function ChatPanel() {
   const [expanded, setExpanded] = useState(false);
   const [typing, setTyping] = useState(false); // 打字动画（首个 chunk 到达后关闭）
-  const [busy, setBusy] = useState(false); // 输入框禁用（流式全部完成后才解禁）
+  const [busy, setBusy] = useState(false);
+  const [chatError, setChatError] = useState(false); // 最新一次请求是否出错
   const [promptLayer, setPromptLayer] = useState<number | null>(null);
   const [layer1ReplyCount, setLayer1ReplyCount] = useState(0);
   const suppressWarning = useAppStore((s) => s.settings.suppressLayer1Warning);
@@ -162,11 +163,11 @@ export function ChatPanel() {
           useAppStore.setState({ chatMessages: { ...useAppStore.getState().chatMessages, [activeProjectId]: msgs.map(m => m.id === targetId ? { ...m, text: fullText } : m) } });
         },
         (layer: number) => {
-          setTyping(false); setBusy(false); setPromptLayer(layer);
+          setTyping(false); setBusy(false); setChatError(false); setPromptLayer(layer);
           if (layer === 1) setLayer1ReplyCount(c => c + 1); else setLayer1ReplyCount(0);
         },
         (error: string) => {
-          setTyping(false); setBusy(false);
+          setTyping(false); setBusy(false); setChatError(true);
           const msgs = useAppStore.getState().chatMessages[activeProjectId] ?? [];
           useAppStore.setState({ chatMessages: { ...useAppStore.getState().chatMessages, [activeProjectId]: msgs.map(m => m.id === targetId ? { ...m, text: `抱歉，AI 请求失败：${error}` } : m) } });
         },
@@ -178,6 +179,7 @@ export function ChatPanel() {
   const doSend = useCallback(
     (text: string) => {
       if (!text || busy) return;
+      setChatError(false);
       streamToTarget(text, nextId(), true);
     },
     [busy, streamToTarget],
@@ -295,6 +297,7 @@ export function ChatPanel() {
     stopRef.current = true;
     setBusy(false);
     setTyping(false);
+    setChatError(false);
   }, []);
 
   const handleBallClick = useCallback(() => {
@@ -436,7 +439,7 @@ export function ChatPanel() {
         <textarea
           ref={textareaRef}
           className="chat-bar-input"
-          placeholder={busy ? "AI 回复中…" : "输入消息…"}
+          placeholder={chatError ? "AI 请求出错" : busy ? "AI 回复中…" : "输入消息…"}
           rows={1}
           disabled={busy}
           onKeyDown={handleKeyDown}
@@ -446,9 +449,12 @@ export function ChatPanel() {
           type="button"
           className="chat-bar-ball"
           onClick={handleBallClick}
-          title={expanded ? (busy ? "停止生成" : "发送") : "展开输入框"}
+          title={expanded ? (chatError ? "出错" : typing ? "接收中…" : busy ? "发送中…" : "发送") : "展开输入框"}
         >
-          {busy ? <Square className="size-3.5" /> : <ArrowUp className="size-4" />}
+          {chatError ? <X className="size-4" />
+          : typing ? <Loader2 className="size-4 animate-spin" />
+          : busy ? <Square className="size-3.5" />
+          : <ArrowUp className="size-4" />}
         </button>
       </div>
     </div>
