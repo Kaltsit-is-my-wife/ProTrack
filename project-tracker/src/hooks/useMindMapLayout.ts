@@ -20,6 +20,7 @@ import { useAppStore } from "@/store/useAppStore";
 import type { DirNode } from "@/types/directory";
 import { layoutMindMap, type MindMapNodeData } from "@/lib/layoutMindMap";
 import { buildFingerprint } from "@/lib/fingerprint";
+import { logger } from "@/lib/logger";
 
 interface UseMindMapLayoutOptions {
   activeProjectId: string | null;
@@ -84,15 +85,15 @@ export function useMindMapLayout({
       const ns = nodesRef.current;
       const es = edgesRef.current;
       if (!tree) {
-        console.log(
-          "[Snapshot] saveCurrentSnapshot: 跳过，无 tree, projectId:",
+        logger.info("Snapshot",
+          "saveCurrentSnapshot: 跳过，无 tree, projectId:",
           projectId,
         );
         return;
       }
       if (ns.length === 0) {
-        console.log(
-          "[Snapshot] saveCurrentSnapshot: 跳过，nodes 为空, projectId:",
+        logger.info("Snapshot",
+          "saveCurrentSnapshot: 跳过，nodes 为空, projectId:",
           projectId,
         );
         return;
@@ -101,8 +102,8 @@ export function useMindMapLayout({
       // 保留已有指纹（指纹只在 ELK 初次生成时写入，不在离开时覆盖）
       const existingFp = store.projectSnapshots[projectId]?.dirFingerprint;
 
-      console.log(
-        "[Snapshot] 保存快照（保留已有指纹）, projectId:",
+      logger.info("Snapshot",
+        "保存快照（保留已有指纹）, projectId:",
         projectId,
         "nodes:",
         ns.length,
@@ -135,8 +136,8 @@ export function useMindMapLayout({
       if (!tree) return;
 
       const seq = ++fingerprintSeqRef.current;
-      console.log(
-        "[Fingerprint] 开始异步扫描, seq:",
+      logger.info("Fingerprint",
+        "开始异步扫描, seq:",
         seq,
         "path:",
         tree.path,
@@ -148,12 +149,12 @@ export function useMindMapLayout({
       })
         .then((freshTree) => {
           if (seq !== fingerprintSeqRef.current) {
-            console.log("[Fingerprint] 扫描结果被丢弃（竞态）, seq:", seq);
+            logger.info("Fingerprint", "扫描结果被丢弃（竞态）, seq:", seq);
             return;
           }
           const fp = buildFingerprint(freshTree);
-          console.log(
-            "[Fingerprint] 扫描完成, seq:",
+          logger.info("Fingerprint",
+            "扫描完成, seq:",
             seq,
             "文件数:",
             JSON.parse(fp).length,
@@ -165,13 +166,13 @@ export function useMindMapLayout({
               ...existing,
               dirFingerprint: fp,
             });
-            console.log(
-              "[Fingerprint] 指纹已写入快照, projectId:",
+            logger.info("Fingerprint",
+              "指纹已写入快照, projectId:",
               projectId,
             );
           }
         })
-        .catch((err) => console.error("[Fingerprint] 扫描失败:", err));
+        .catch((err) => logger.error("Fingerprint", "扫描失败:", err));
     },
     [currentIgnoreRulesRef],
   );
@@ -185,12 +186,12 @@ export function useMindMapLayout({
       const store = useAppStore.getState();
       const snap = store.projectSnapshots[projectId];
       if (!snap) {
-        console.log("[StaleCheck] 跳过：无快照, projectId:", projectId);
+        logger.info("StaleCheck", "跳过：无快照, projectId:", projectId);
         return;
       }
       if (!snap.dirFingerprint) {
-        console.log(
-          "[StaleCheck] 跳过：快照无指纹, projectId:",
+        logger.info("StaleCheck",
+          "跳过：快照无指纹, projectId:",
           projectId,
           "snapKeys:",
           Object.keys(snap),
@@ -199,12 +200,12 @@ export function useMindMapLayout({
       }
       const tree = store.projectTrees[projectId];
       if (!tree) {
-        console.log("[StaleCheck] 跳过：无目录树, projectId:", projectId);
+        logger.info("StaleCheck", "跳过：无目录树, projectId:", projectId);
         return;
       }
 
-      console.log(
-        "[StaleCheck] 开始后台扫描, projectId:",
+      logger.info("StaleCheck",
+        "开始后台扫描, projectId:",
         projectId,
         "path:",
         tree.path,
@@ -221,8 +222,8 @@ export function useMindMapLayout({
           const oldCount = JSON.parse(snap.dirFingerprint!).length;
           const newCount = JSON.parse(fp).length;
           const changed = fp !== snap.dirFingerprint;
-          console.log(
-            "[StaleCheck] 扫描完成, 旧文件数:",
+          logger.info("StaleCheck",
+            "扫描完成, 旧文件数:",
             oldCount,
             "新文件数:",
             newCount,
@@ -231,19 +232,19 @@ export function useMindMapLayout({
           );
           if (changed) {
             useAppStore.getState().markProjectStale(projectId);
-            console.log(
-              "[StaleCheck] ✅ 已标记 stale, projectId:",
+            logger.info("StaleCheck",
+              "✅ 已标记 stale, projectId:",
               projectId,
             );
           } else {
             useAppStore.getState().clearProjectStale(projectId);
-            console.log(
-              "[StaleCheck] 指纹一致，清除 stale, projectId:",
+            logger.info("StaleCheck",
+              "指纹一致，清除 stale, projectId:",
               projectId,
             );
           }
         })
-        .catch((err) => console.error("[StaleCheck] 扫描失败:", err));
+        .catch((err) => logger.error("StaleCheck", "扫描失败:", err));
     },
     [currentIgnoreRulesRef],
   );
@@ -310,7 +311,7 @@ export function useMindMapLayout({
   // 子树重排：触发 ELK 重排，但只更新选中节点子树的布局
   const handleRelayoutSubtree = useCallback(
     (nodePath: string) => {
-      console.log("[Relayout] 子树重排:", nodePath);
+      logger.info("Layout", "子树重排:", nodePath);
       if (activeProjectId) {
         useAppStore.getState().clearProjectSnapshot(activeProjectId);
       }
@@ -341,11 +342,11 @@ export function useMindMapLayout({
   useEffect(() => {
     const prev = prevActiveRef.current;
     if (prev && prev !== activeProjectId) {
-      console.log("[Switch] 离开项目, prev:", prev, "new:", activeProjectId);
+      logger.info("Layout", "离开项目, prev:", prev, "new:", activeProjectId);
       saveCurrentSnapshot(prev);
     } else {
-      console.log(
-        "[Switch] 初始进入或同项目切换, prev:",
+      logger.info("Layout",
+        "初始进入或同项目切换, prev:",
         prev,
         "new:",
         activeProjectId,
@@ -380,8 +381,8 @@ export function useMindMapLayout({
     // ---- 情况 1：刚切到本项目，且有有效快照 → 直接恢复 ----
     if (justSwitched && activeProjectId) {
       const snap = useAppStore.getState().projectSnapshots[activeProjectId];
-      console.log(
-        "[Layout] 项目切换检测, activeProjectId:",
+      logger.info("Layout",
+        "项目切换检测, activeProjectId:",
         activeProjectId,
         "hasSnap:",
         !!snap,
@@ -389,8 +390,8 @@ export function useMindMapLayout({
         snap ? Object.keys(snap) : "N/A",
       );
       if (snap && snap.treeRootPath === tree.path) {
-        console.log(
-          "[Layout] 恢复快照, nodes:",
+        logger.info("Layout",
+          "恢复快照, nodes:",
           snap.nodes.length,
           "hasFingerprint:",
           !!snap.dirFingerprint,
@@ -411,15 +412,15 @@ export function useMindMapLayout({
         });
 
         // 后台扫描：比对目录变更，不一致时标记 stale
-        console.log("[Layout] 触发异步变更检测...");
+        logger.info("Layout", "触发异步变更检测...");
         checkProjectStale(activeProjectId);
 
         return;
       }
       // 快照无效（目录可能变更了），清除残留
       if (snap) {
-        console.log(
-          "[Layout] 快照 treeRootPath 不匹配，清除, snapPath:",
+        logger.info("Layout",
+          "快照 treeRootPath 不匹配，清除, snapPath:",
           snap.treeRootPath,
           "treePath:",
           tree.path,
@@ -427,7 +428,7 @@ export function useMindMapLayout({
         useAppStore.getState().clearProjectSnapshot(activeProjectId);
       }
       // 无快照的新项目：重置 collapsedPaths（可能残留上一个项目的值）
-      console.log("[Layout] 无有效快照，重置 collapsedPaths，运行 ELK");
+      logger.info("Layout", "无有效快照，重置 collapsedPaths，运行 ELK");
       useAppStore.setState({ collapsedPaths: [] });
     }
 
@@ -449,8 +450,8 @@ export function useMindMapLayout({
 
     const latestHidden = useAppStore.getState().hiddenFiles;
 
-    console.log(
-      "[Layout] ELK 布局开始 | lock:",
+    logger.info("Layout",
+      "ELK 布局开始 | lock:",
       lock,
       "| maxDepth:",
       maxDepth,
@@ -462,8 +463,8 @@ export function useMindMapLayout({
     })
       .then(({ nodes: newNodes, edges: newEdges }) => {
         if (cancelled || lock !== layoutLock.current) {
-          console.log(
-            "[Layout] ELK 结果过期 | lock:",
+          logger.info("Layout",
+            "ELK 结果过期 | lock:",
             lock,
             "| current:",
             layoutLock.current,
@@ -471,8 +472,8 @@ export function useMindMapLayout({
           forceRelayoutRef.current = false;
           return;
         }
-        console.log(
-          "[Layout] ELK 布局完成 | nodes:",
+        logger.info("Layout",
+          "ELK 布局完成 | nodes:",
           newNodes.length,
           "edges:",
           newEdges.length,
@@ -506,8 +507,8 @@ export function useMindMapLayout({
               clearedCount++;
             }
           }
-          console.log(
-            "[SubtreeRelayout] path:",
+          logger.info("Layout",
+            "path:",
             relayoutPath,
             "| cleared children:",
             clearedCount,
@@ -532,8 +533,7 @@ export function useMindMapLayout({
               };
               if (relayoutPath && nn.id.startsWith(relayoutPath)) {
                 const old = oldPositions[nn.id] ?? "NEW";
-                console.log(
-                  "[SubtreeRelayout]",
+                logger.info("Layout",
                   nn.id.split("\\").pop(),
                   "| old:",
                   old,
@@ -545,8 +545,8 @@ export function useMindMapLayout({
             }
           }
           if (relayoutPath && nn.id.startsWith(relayoutPath)) {
-            console.log(
-              "[SubtreeRelayout] FALLBACK:",
+            logger.info("Layout",
+              "FALLBACK:",
               nn.id.split("\\").pop(),
               "| pos:",
               nn.position.x.toFixed(0) + "," + nn.position.y.toFixed(0),
@@ -563,15 +563,15 @@ export function useMindMapLayout({
         if (elkProjectId) {
           const snapStore = useAppStore.getState();
           const hasSnap = !!snapStore.projectSnapshots[elkProjectId];
-          console.log(
-            "[Layout] ELK 完成, projectId:",
+          logger.info("Layout",
+            "ELK 完成, projectId:",
             elkProjectId,
             "已有快照:",
             hasSnap,
           );
           if (!hasSnap) {
-            console.log(
-              "[Layout] 首次创建快照, nodes:",
+            logger.info("Layout",
+              "首次创建快照, nodes:",
               newNodes.length,
             );
             snapStore.saveProjectSnapshot(elkProjectId, {
@@ -591,7 +591,7 @@ export function useMindMapLayout({
       })
       .catch((err) => {
         forceRelayoutRef.current = false;
-        console.error("[Layout] ELK 布局失败:", err);
+        logger.error("Layout", "ELK 布局失败:", err);
       });
 
     return () => {
@@ -618,8 +618,8 @@ export function useMindMapLayout({
 
   useEffect(() => {
     if (!activeProjectId) return;
-    console.log(
-      "[Collapse] visibility toggle, collapsed:",
+    logger.info("Collapse",
+      "visibility toggle, collapsed:",
       collapsedPaths.length,
     );
 
@@ -641,7 +641,7 @@ export function useMindMapLayout({
         }
         return n;
       });
-      if (changed) console.log("[Collapse] updated node visibility");
+      if (changed) logger.info("Collapse", "updated node visibility");
       return changed ? updated : currentNodes;
     });
 

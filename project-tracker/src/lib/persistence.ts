@@ -28,6 +28,7 @@
 
 import { Store } from "@tauri-apps/plugin-store";
 import { invoke } from "@tauri-apps/api/core";
+import { logger } from "@/lib/logger";
 import { useAppStore, type AppState, type AiAnalysis } from "@/store/useAppStore";
 import type { ProjectSnapshot } from "@/store/useAppStore";
 
@@ -73,7 +74,7 @@ interface OldPersistedSettings {
 
 async function loadConfig(): Promise<AppState["settings"] | null> {
   try {
-    console.log("[Persistence] 加载配置: app-state.json");
+    logger.info("Persistence", "[Persistence] 加载配置: app-state.json");
     const s = await Store.load(OLD_STORE_PATH, { defaults: {}, autoSave: false });
     configStore = s;
 
@@ -85,7 +86,7 @@ async function loadConfig(): Promise<AppState["settings"] | null> {
       const oldState = await s.get<{ settings: OldPersistedSettings }>("state");
       raw = oldState?.settings;
       if (raw) {
-        console.log("[Persistence] 从旧格式 state.settings 中恢复配置");
+        logger.info("Persistence", "[Persistence] 从旧格式 state.settings 中恢复配置");
         // 写入新格式
         await s.set("settings", raw);
         await s.save();
@@ -93,7 +94,7 @@ async function loadConfig(): Promise<AppState["settings"] | null> {
     }
 
     if (!raw) {
-      console.log("[Persistence] 配置存档为空，使用默认值");
+      logger.info("Persistence", "[Persistence] 配置存档为空，使用默认值");
       return null;
     }
 
@@ -103,7 +104,7 @@ async function loadConfig(): Promise<AppState["settings"] | null> {
       try {
         apiKey = await invoke<string>("decrypt_setting", { stored: apiKey });
       } catch (e) {
-        console.warn("[Persistence] API Key 解密失败，已清除:", e);
+        logger.warn("Persistence", "[Persistence] API Key 解密失败，已清除:", e);
         apiKey = "";
       }
     }
@@ -121,7 +122,7 @@ async function loadConfig(): Promise<AppState["settings"] | null> {
       suppressLayer1Warning: raw.suppressLayer1Warning ?? false,
     };
   } catch (err) {
-    console.error("[Persistence] 加载配置失败:", err);
+    logger.error("Persistence", "[Persistence] 加载配置失败:", err);
     return null;
   }
 }
@@ -140,26 +141,26 @@ interface BusinessData {
 
 async function loadBusinessData(dataDir: string): Promise<BusinessData | null> {
   if (!dataDir) {
-    console.log("[Persistence] dataDir 为空，跳过业务数据加载");
+    logger.info("Persistence", "[Persistence] dataDir 为空，跳过业务数据加载");
     return null;
   }
 
   try {
-    console.log("[Persistence] 加载业务数据:", dataDir);
+    logger.info("Persistence", "[Persistence] 加载业务数据:", dataDir);
     const json = await invoke<string | null>("load_data_file", {
       filename: BUSINESS_FILE,
       dataDir,
     });
 
     if (!json) {
-      console.log("[Persistence] 业务数据文件不存在");
+      logger.info("Persistence", "[Persistence] 业务数据文件不存在");
       return null;
     }
 
     const raw = JSON.parse(json);
     // 基本校验
     if (!raw || !Array.isArray(raw.projects)) {
-      console.warn("[Persistence] 业务数据格式异常");
+      logger.warn("Persistence", "[Persistence] 业务数据格式异常");
       return null;
     }
 
@@ -172,7 +173,7 @@ async function loadBusinessData(dataDir: string): Promise<BusinessData | null> {
         : [val as AiAnalysis];
     }
 
-    console.log("[Persistence] 业务数据加载成功, 字段:", Object.keys(raw).join(", "));
+    logger.info("Persistence", "[Persistence] 业务数据加载成功, 字段:", Object.keys(raw).join(", "));
     return {
       projects: raw.projects ?? [],
       projectTrees: raw.projectTrees ?? {},
@@ -181,7 +182,7 @@ async function loadBusinessData(dataDir: string): Promise<BusinessData | null> {
       chatMessages: raw.chatMessages ?? {},
     };
   } catch (err) {
-    console.error("[Persistence] 加载业务数据失败:", err);
+    logger.error("Persistence", "[Persistence] 加载业务数据失败:", err);
     return null;
   }
 }
@@ -204,7 +205,7 @@ async function loadCache(dataDir: string): Promise<Record<string, ProjectSnapsho
     const raw = JSON.parse(json);
     return typeof raw === "object" && raw !== null ? raw : {};
   } catch (err) {
-    console.error("[Persistence] 加载缓存失败:", err);
+    logger.error("Persistence", "[Persistence] 加载缓存失败:", err);
     return {};
   }
 }
@@ -218,7 +219,7 @@ async function migrateFromOldStore(): Promise<{
   snapshots: Record<string, ProjectSnapshot>;
 } | null> {
   try {
-    console.log("[Persistence] 尝试从旧格式迁移...");
+    logger.info("Persistence", "[Persistence] 尝试从旧格式迁移...");
     const s = await Store.load(OLD_STORE_PATH, { defaults: {}, autoSave: false });
     const raw = await s.get<{
       projects?: unknown[];
@@ -230,7 +231,7 @@ async function migrateFromOldStore(): Promise<{
     }>("state");
 
     if (!raw || !Array.isArray(raw.projects)) {
-      console.log("[Persistence] 旧存档为空或格式异常，跳过迁移");
+      logger.info("Persistence", "[Persistence] 旧存档为空或格式异常，跳过迁移");
       return null;
     }
 
@@ -261,7 +262,7 @@ async function migrateFromOldStore(): Promise<{
 
     return { business, snapshots };
   } catch (err) {
-    console.error("[Persistence] 迁移失败:", err);
+    logger.error("Persistence", "[Persistence] 迁移失败:", err);
     return null;
   }
 }
@@ -289,9 +290,9 @@ async function doSaveConfig() {
     await configStore.set("settings", toSave);
     await configStore.save();
     saveCount++;
-    console.log("[Persistence] 配置已保存 #" + saveCount);
+    logger.info("Persistence", "[Persistence] 配置已保存 #" + saveCount);
   } catch (err) {
-    console.error("[Persistence] 配置保存失败:", err);
+    logger.error("Persistence", "[Persistence] 配置保存失败:", err);
   }
 }
 
@@ -324,7 +325,7 @@ async function doSaveBusiness() {
       json,
     });
   } catch (err) {
-    console.error("[Persistence] 业务数据保存失败:", err);
+    logger.error("Persistence", "[Persistence] 业务数据保存失败:", err);
   }
 }
 
@@ -349,7 +350,7 @@ async function doSaveCache() {
       json: JSON.stringify(snapshots),
     });
   } catch (err) {
-    console.error("[Persistence] 缓存保存失败:", err);
+    logger.error("Persistence", "[Persistence] 缓存保存失败:", err);
   }
 }
 
@@ -361,7 +362,7 @@ export async function initPersistence(): Promise<void> {
   // 0. 解析默认数据目录
   try {
     defaultDataDir = await invoke<string>("get_data_dir");
-    console.log("[Persistence] 默认数据目录:", defaultDataDir);
+    logger.info("Persistence", "[Persistence] 默认数据目录:", defaultDataDir);
   } catch {
     defaultDataDir = "";
   }
@@ -388,18 +389,18 @@ export async function initPersistence(): Promise<void> {
       // 立即写入新位置
       const saveDir = config?.dataPath || defaultDataDir;
       if (saveDir) {
-        console.log("[Persistence] 迁移数据写入:", saveDir);
+        logger.info("Persistence", "[Persistence] 迁移数据写入:", saveDir);
         invoke("save_data_file", {
           filename: BUSINESS_FILE,
           dataDir: saveDir,
           json: JSON.stringify(business),
-        }).catch((err) => console.error("[Persistence] 迁移保存业务数据失败:", err));
+        }).catch((err) => logger.error("Persistence", "[Persistence] 迁移保存业务数据失败:", err));
 
         invoke("save_cache", {
           key: SNAPSHOTS_CACHE_KEY,
           dataDir: saveDir,
           json: JSON.stringify(snapshots),
-        }).catch((err) => console.error("[Persistence] 迁移保存缓存失败:", err));
+        }).catch((err) => logger.error("Persistence", "[Persistence] 迁移保存缓存失败:", err));
       }
     }
   }
@@ -425,12 +426,12 @@ export async function initPersistence(): Promise<void> {
       projectSnapshots: snapshots,
     });
   } else {
-    console.log("[Persistence] 无业务数据，使用初始状态");
+    logger.info("Persistence", "[Persistence] 无业务数据，使用初始状态");
   }
 
   if (config) {
     useAppStore.setState({ settings: config });
-    console.log("[Persistence] 配置已恢复");
+    logger.info("Persistence", "[Persistence] 配置已恢复");
   }
 
   // 5. 订阅变更 → 分拆保存

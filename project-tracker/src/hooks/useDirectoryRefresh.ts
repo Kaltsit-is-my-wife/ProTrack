@@ -20,6 +20,7 @@ import { useAppStore } from "@/store/useAppStore";
 import type { DirNode } from "@/types/directory";
 import { getDirName } from "@/types/directory";
 import { filterChildren } from "@/lib/filterRules";
+import { logger } from "@/lib/logger";
 
 interface UseDirectoryRefreshOptions {
   activeProjectId: string | null;
@@ -85,7 +86,7 @@ export function useDirectoryRefresh({
         collapsedPaths: [],
       });
     } catch (err) {
-      console.error("[Refresh] 扫描失败:", err);
+      logger.error("Refresh", "扫描失败:", err);
     } finally {
       setRefreshing(false);
     }
@@ -100,7 +101,7 @@ export function useDirectoryRefresh({
       });
 
       if (!selected) {
-        console.log("[Project] 用户取消添加");
+        logger.info("Project", "用户取消添加");
         return;
       }
 
@@ -149,8 +150,8 @@ export function useDirectoryRefresh({
         invoke("ensure_project_tracker_dir", { projectPath: dirPath }).catch(
           () => {},
         );
-        console.log(
-          "[Project] 已添加 | id:",
+        logger.info("Project",
+          "已添加 | id:",
           latest.id,
           "| name:",
           name,
@@ -158,16 +159,16 @@ export function useDirectoryRefresh({
           dirPath,
         );
       } else {
-        console.error("[Project] 添加失败：无法获取最新项目 | all:", all);
+        logger.error("Project", "添加失败：无法获取最新项目 | all:", all);
       }
     } catch (err) {
-      console.error("[Project] 添加项目失败:", err);
+      logger.error("Project", "添加项目失败:", err);
     }
   }, [addProject, setProjectTree, setActiveProject, setHiddenFiles, currentIgnoreRulesRef]);
 
   const handleSelectProject = useCallback(
     (id: string) => {
-      console.log("[Click] 点击项目列表项, id:", id);
+      logger.info("Project", "点击项目列表项, id:", id);
       setActiveProject(id);
       const proj = useAppStore.getState().projects.find((p) => p.id === id);
       if (proj) {

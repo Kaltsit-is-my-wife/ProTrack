@@ -232,3 +232,36 @@ models/    → 纯数据结构，不依赖 services/ 或 commands/
 - 统一用 `safeInvoke`，不裸调 `invoke`
 - 异步必须给反馈（Spinner、按钮禁用）
 - 后端返回数据做防御性校验
+
+## 日志规范（基于 docs/12-log-principles.md，前后端必须遵守）
+
+### 级别定义
+
+| 级别 | 适用场景 | Release 保留？ |
+|------|---------|---------------|
+| DEBUG | 变量值追踪、函数进出、AI 原始 JSON、目录遍历细节 | **否**（条件编译剔除） |
+| INFO | 关键业务节点：启动、切换项目、AI 分析开始/结束、设置保存、导出 | **是** |
+| WARN | 非致命异常：AI 容错解析、跳过无权限文件、解密回退 | **是** |
+| ERROR | 阻断性错误：网络断开、文件读写拒绝、数据损坏 | **是** |
+
+### 输出目标
+
+| 环境 | 前端 | 后端 |
+|------|------|------|
+| 开发期 `pnpm tauri dev` | 浏览器 Console | 终端 stdout |
+| 发布期 `pnpm tauri build` | 仅 ERROR 通过 IPC 写文件 | 本地日志文件（日期轮转） |
+
+### 格式
+
+`[时间戳] [级别] [模块] 消息`
+
+- 前端：`logger.info("AI:Analyze", "分析完成 | len:", chars)`
+- 后端：`logger.write(Level::Info, "cmd::ai", "核心分析开始 | projectId: ...")`
+- 模块名用 `::` 分层：`cmd::ai`、`svc::parser`、`AI:Chat`
+
+### 打日志位置
+
+- **前端**：禁止在组件渲染逻辑中 `console.log`，只在用户触发的关键操作（点击 AI 分析、导出）和 ErrorBoundary 中调 `logger.info/error`
+- **后端 commands**：记录用户操作入口和最终结果（INFO/ERROR）
+- **后端 services**：记录核心分支和异常（WARN/ERROR）
+- **禁止** models 层打日志

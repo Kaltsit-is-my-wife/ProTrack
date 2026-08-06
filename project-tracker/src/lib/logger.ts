@@ -14,18 +14,27 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * 前端日志模块
+ * 前端日志模块（遵循 docs/12-log-principles.md）
  *
- * - 拦截 console.log / warn / error
+ * - 显式 API：logger.info / warn / error / debug
+ * - 拦截 console.log / warn / error 转发到 Rust 日志文件
  * - 捕获未处理的 Promise rejection 和 Error
- * - 通过 invoke("log_message") 写入 Rust 日志文件
- * - 日志文件位于项目根目录的 log/ 下，按日期命名
+ * - dev 模式：DEBUG/INFO/WARN/ERROR 全部输出到 console + IPC
+ * - release 模式：仅 ERROR 通过 IPC 写入后端日志文件
  */
 
 import { invoke } from "@tauri-apps/api/core";
 
 // ============================================================
-// 初始化标志 + 日志队列（防止并发 IPC 导致日志丢失）
+// 环境检测
+// ============================================================
+
+const isDev = typeof window !== "undefined" && !(window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  ? false
+  : true; // Tauri 环境默认按 dev 处理，build 时 Vite 的 define 可覆盖
+
+// ============================================================
+// 初始化标志 + 日志队列
 // ============================================================
 
 let initialized = false;
@@ -63,16 +72,17 @@ async function drainQueue() {
   draining = false;
 }
 
-function sendLog(
+function enqueue(
   level: "debug" | "info" | "warn" | "error",
   source: string,
   message: string,
 ) {
+  // release 模式：仅 ERROR 写入后端文件，其余级别丢弃
+  if (!isDev && level !== "error") return;
   queue.push({ level, source, message });
   drainQueue();
 }
 
-/** 将任意参数格式化为字符串 */
 function formatArgs(args: unknown[]): string {
   return args
     .map((a) => {
@@ -90,7 +100,37 @@ function formatArgs(args: unknown[]): string {
 }
 
 // ============================================================
-// 拦截 console
+// 显式 API（推荐使用，禁止在组件渲染中调用 debug/info）
+// ============================================================
+
+export const logger = {
+  debug(source: string, ...args: unknown[]) {
+    if (!isDev) return;
+    const msg = formatArgs(args);
+    originalConsole.debug(`[${source}]`, msg);
+  },
+
+  info(source: string, ...args: unknown[]) {
+    const msg = formatArgs(args);
+    originalConsole.log(`[${source}]`, msg);
+    enqueue("info", source, msg);
+  },
+
+  warn(source: string, ...args: unknown[]) {
+    const msg = formatArgs(args);
+    originalConsole.warn(`[${source}]`, msg);
+    enqueue("warn", source, msg);
+  },
+
+  error(source: string, ...args: unknown[]) {
+    const msg = formatArgs(args);
+    originalConsole.error(`[${source}]`, msg);
+    enqueue("error", source, msg);
+  },
+};
+
+// ============================================================
+// 原始 console 引用
 // ============================================================
 
 const originalConsole = {
@@ -100,20 +140,24 @@ const originalConsole = {
   debug: (console.debug ?? console.log).bind(console),
 };
 
+// ============================================================
+// 拦截 console（兜底：捕获未迁移的裸 console.log）
+// ============================================================
+
 function interceptConsole() {
   console.log = (...args: unknown[]) => {
     originalConsole.log(...args);
-    sendLog("info", "console", formatArgs(args));
+    enqueue("info", "console", formatArgs(args));
   };
 
   console.warn = (...args: unknown[]) => {
     originalConsole.warn(...args);
-    sendLog("warn", "console", formatArgs(args));
+    enqueue("warn", "console", formatArgs(args));
   };
 
   console.error = (...args: unknown[]) => {
     originalConsole.error(...args);
-    sendLog("error", "console", formatArgs(args));
+    enqueue("error", "console", formatArgs(args));
   };
 }
 
@@ -122,29 +166,23 @@ function interceptConsole() {
 // ============================================================
 
 function captureGlobalErrors() {
-  // 未处理的 Promise rejection
   window.addEventListener("unhandledrejection", (event) => {
     const reason =
       event.reason instanceof Error
         ? `${event.reason.name}: ${event.reason.message}\n${event.reason.stack ?? ""}`
         : String(event.reason);
-    originalConsole.error("[UnhandledRejection]", reason);
-    sendLog("error", "global", `UnhandledRejection: ${reason}`);
+    logger.error("global", `UnhandledRejection: ${reason}`);
   });
 
-  // 未捕获的异常
   window.addEventListener("error", (event) => {
-    // 过滤 React/浏览器内部的无害警告
     const msg = event.message;
     if (
       msg.includes("ResizeObserver loop") ||
       msg.includes("ResizeObserverLoop")
     ) {
-      return; // 无害，静默忽略
+      return;
     }
-    const fullMsg = `${msg} at ${event.filename}:${event.lineno}:${event.colno}`;
-    originalConsole.error("[UncaughtError]", fullMsg);
-    sendLog("error", "global", `UncaughtError: ${fullMsg}`);
+    logger.error("global", `${msg} at ${event.filename}:${event.lineno}:${event.colno}`);
   });
 }
 
@@ -152,7 +190,6 @@ function captureGlobalErrors() {
 // 公开 API
 // ============================================================
 
-/** 初始化日志系统（在 main.tsx 中最先调用） */
 export function initLogger() {
   if (initialized) return;
   initialized = true;
@@ -160,23 +197,10 @@ export function initLogger() {
   interceptConsole();
   captureGlobalErrors();
 
-  // 写启动标记
-  const ua = navigator.userAgent;
   const time = new Date().toISOString();
-  originalConsole.log(`[Logger] 日志系统已初始化 (${time})`);
-  sendLog("info", "system", `前端日志初始化 | UA: ${ua} | Time: ${time}`);
+  logger.info("system", `前端日志初始化 | Time: ${time}`);
 }
 
-/** 显式写入一条日志（用于关键操作点） */
-export async function log(
-  level: "debug" | "info" | "warn" | "error",
-  source: string,
-  message: string,
-) {
-  await sendLog(level, source, message);
-}
-
-/** 恢复原生 console（仅在需要时使用） */
 export function restoreConsole() {
   console.log = originalConsole.log;
   console.warn = originalConsole.warn;

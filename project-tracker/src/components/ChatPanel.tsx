@@ -19,6 +19,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, type ChatMessage } from "@/store/useAppStore";
 import { chatWithAiStream } from "@/lib/ai";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { logger } from "@/lib/logger";
 
 // ============================================================
 // 工具
@@ -223,10 +224,10 @@ export function ChatPanel() {
       // 保存当前版本到历史
       if (aiMsg.text) {
         const savedText = aiMsg.text;
-        console.log("[Regen] 存版本 | text:", savedText.slice(0, 40));
+        logger.info("Chat", "存版本 | text:", savedText.slice(0, 40));
         setVersionHistory(p => {
           const h = p[aiMsg.id] ?? [];
-          console.log("[Regen] hLen:", h.length, "→", h.length + 1);
+          logger.info("Chat", "hLen:", h.length, "→", h.length + 1);
           return { ...p, [aiMsg.id]: [...h, savedText] };
         });
         // cursor 不动（始终显示实时版本），历史记录自动增长
@@ -248,8 +249,8 @@ export function ChatPanel() {
     const cur = versionCursor[msgId] ?? 0;
     const h = versionHistory[msgId] ?? [];
     const nc = cur + direction;
-    console.log("[VerSwap] dir:", direction, "| cur:", cur, "→ nc:", nc, "| hLen:", h.length, "| h:", [...h]);
-    if (nc < 0 || nc > h.length) { console.log("[VerSwap] 越界"); return; }
+    logger.info("Chat", "dir:", direction, "| cur:", cur, "→ nc:", nc, "| hLen:", h.length, "| h:", [...h]);
+    if (nc < 0 || nc > h.length) { logger.info("Chat", "越界"); return; }
 
     const msgs = useAppStore.getState().chatMessages[activeProjectId] ?? [];
     const ai = msgs.find(m => m.id === msgId);
@@ -261,15 +262,15 @@ export function ChatPanel() {
       : nc === 0
         ? h[h.length - cur]       // 回到实时版：取之前存入的文本
         : h[h.length - nc];       // 历史间切换
-    console.log("[VerSwap] oldText:", oldText?.slice(0, 40));
-    if (!oldText) { console.log("[VerSwap] oldText 为空"); return; }
+    logger.info("Chat", "oldText:", oldText?.slice(0, 40));
+    if (!oldText) { logger.info("Chat", "oldText 为空"); return; }
 
     const savedCurText = ai.text;
     // 数组长度永远不变：cur=0 时和 h[last] 互换，其余替换对应位置
     setVersionHistory(vh => {
       const l = [...(vh[msgId] ?? [])];
       l[cur === 0 ? l.length - 1 : l.length - cur] = savedCurText;
-      console.log("[VerSwap] h:", [...l], "| len:", l.length);
+      logger.info("Chat", "h:", [...l], "| len:", l.length);
       return { ...vh, [msgId]: l };
     });
     setVersionCursor(p => ({ ...p, [msgId]: nc }));

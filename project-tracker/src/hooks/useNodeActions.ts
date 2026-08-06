@@ -18,6 +18,7 @@ import type { Node, Edge, OnSelectionChangeFunc } from "reactflow";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store/useAppStore";
 import type { MindMapNodeData } from "@/lib/layoutMindMap";
+import { logger } from "@/lib/logger";
 
 interface UseNodeActionsOptions {
   hiddenFiles: Record<string, string[]>;
@@ -86,7 +87,7 @@ export function useNodeActions({
         (n.data as MindMapNodeData).path !== rootPath,
     );
     if (targets.length === 0) return;
-    console.log("[Delete] 删除选中节点 | count:", targets.length);
+    logger.info("Delete", "删除选中节点 | count:", targets.length);
     setNodes((nds) =>
       nds.filter((n) => !targets.some((s) => s.id === n.id)),
     );
@@ -110,7 +111,7 @@ export function useNodeActions({
         return;
       }
       invoke("open_in_explorer", { path: node.data.path }).catch((err) =>
-        console.error("打开目录失败:", err),
+        logger.error("Delete", "打开目录失败:", err),
       );
     },
     [onOpenHiddenDialog],

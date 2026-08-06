@@ -22,6 +22,7 @@ import {
   analyzeProjectFileOrg,
   type AnalyzeCoreResponse,
 } from "@/lib/ai";
+import { logger } from "@/lib/logger";
 
 interface UseAiAnalysisOptions {
   activeProjectId: string | null;
@@ -47,7 +48,7 @@ export function useAiAnalysis({ activeProjectId }: UseAiAnalysisOptions) {
     const tree = store.projectTrees[activeProjectId];
     if (!project || !tree) return;
 
-    console.log("[AI:UI] 用户触发 AI 并行分析 | projectId:", activeProjectId);
+    logger.info("AI:UI", "用户触发 AI 并行分析 | projectId:", activeProjectId);
     invoke("ensure_project_tracker_dir", { projectPath: project.path }).catch(
       () => {},
     );
@@ -87,9 +88,9 @@ export function useAiAnalysis({ activeProjectId }: UseAiAnalysisOptions) {
           fileOrganization: fileOrg.fileOrganization,
         },
       });
-      console.log("[AI:UI] ✅ AI 并行分析完成并已存储");
+      logger.info("AI:UI", "✅ AI 并行分析完成并已存储");
     } catch (err) {
-      console.error("[AI:UI] ❌ AI 分析失败:", err);
+      logger.error("AI:UI", "❌ AI 分析失败:", err);
       toast.error("AI 服务请求失败，请检查网络连接", {
         description: "AI_REQUEST_FAILED",
         duration: 5000,

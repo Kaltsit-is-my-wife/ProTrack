@@ -14,6 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import { safeInvoke } from "@/lib/invoke";
+import { logger } from "@/lib/logger";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { DirNode } from "@/types/directory";
 import type { Project } from "@/types/project";
@@ -135,7 +136,7 @@ export async function analyzeProject(
   dataDir: string,
 ): Promise<AnalyzeResponse> {
   const treeJson = JSON.stringify(tree);
-  console.log(
+  logger.info("AI:Frontend",
     "[AI:Frontend] 发起并行分析 | projectId:",
     project.id,
     "| name:",
@@ -165,7 +166,7 @@ export async function analyzeProject(
   }
 
   const elapsed = (performance.now() - t0).toFixed(0);
-  console.log(
+  logger.info("AI:Frontend",
     "[AI:Frontend] 并行分析完成 | coreLen:",
     coreResult.summary.length,
     "| fileOrgLen:",
@@ -274,7 +275,7 @@ export async function chatWithAiStream(
     ...getAiOverrides(),
   };
 
-  console.log(
+  logger.info("AI:Frontend",
     "[AI:Chat] 发起流式对话 | projectId:",
     project.id,
     "| msgLen:",
@@ -322,5 +323,5 @@ export async function chatWithAiStream(
   const t0 = performance.now();
   await safeInvoke("chat_with_ai", { req }, { silent: true });
   const elapsed = (performance.now() - t0).toFixed(0);
-  console.log("[AI:Chat] 流式请求已发起 | elapsed:", elapsed + "ms");
+  logger.info("AI:Frontend","[AI:Chat] 流式请求已发起 | elapsed:", elapsed + "ms");
 }

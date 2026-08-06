@@ -55,8 +55,14 @@ impl Logger {
         }
     }
 
-    /// 写入一条日志
+    /// 写入一条日志（遵循 docs/12-log-principles.md）
     pub fn write(&self, level: Level, source: &str, message: &str) {
+        // release 模式：跳过 DEBUG 级别
+        #[cfg(not(debug_assertions))]
+        if level == Level::Debug {
+            return;
+        }
+
         let now = chrono_now();
         let line = format!(
             "[{}] [{}] [{}] {}\n",
@@ -66,10 +72,11 @@ impl Logger {
             message
         );
 
-        // 同时输出到 stdout（开发时可在终端看到）
+        // dev 模式输出到 stdout，release 模式只写文件
+        #[cfg(debug_assertions)]
         print!("{}", line);
 
-        // 写入文件
+        // 写入文件（dev + release 均写入）
         let file_path = self.ensure_file();
         if let Some(path) = file_path {
             if let Ok(mut f) = OpenOptions::new().append(true).create(true).open(&path) {
