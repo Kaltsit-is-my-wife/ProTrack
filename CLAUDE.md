@@ -180,7 +180,7 @@ The `ready.md` file outlines the full product plan. For detailed API references,
 
 拓扑：外层 projectTracker/ = Git 仓库根（.git 在此）= VS Code 工作区根 = cwd。内层 project-tracker/ = 实际代码（Tauri+Vite）。全仓库只有一份 .gitignore，在外层；内层禁止存在 .gitignore。本规范文档位于外层 CLAUDE.md（会话启动即加载）。
 
-必须被忽略、绝不进 git：外层壳目录 .claude/、testRoaming/、userRoaming/；以及 .env、node_modules/、dist/、dist-ssr/、src-tauri/target/、src-tauri/gen/、*.pem/*.key/*.p12/*.pfx、*.local。
+必须被忽略、绝不进 git：外层壳目录 .claude/、testRoaming/、userRoaming/、references/；以及 .env、node_modules/、dist/、dist-ssr/、src-tauri/target/、src-tauri/gen/、*.pem/*.key/*.p12/*.pfx、*.local。
 
 DO：只改外层这一份 .gitignore；优先用无路径前缀模式（如 node_modules/，匹配任意层级罩住内层），需精确定位内层时用 project-tracker/... 相对前缀；改规则先于 git add，已追踪文件需先 git rm -r --cached；提交前用 git check-ignore -v <path> 验证（有输出=已忽略，无输出=危险）。
 

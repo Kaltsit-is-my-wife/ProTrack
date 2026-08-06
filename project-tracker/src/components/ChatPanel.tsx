@@ -19,7 +19,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, type ChatMessage } from "@/store/useAppStore";
 import { chatWithAiStream } from "@/lib/ai";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
-import { logger } from "@/lib/logger";
 
 // ============================================================
 // 工具
@@ -46,8 +45,9 @@ export function ChatPanel() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const stopRef = useRef(false);
   const [dropdownMsgId, setDropdownMsgId] = useState<string | null>(null);
-  const [versionHistory, setVersionHistory] = useState<Record<string, string[]>>({});
-  const [versionCursor, setVersionCursor] = useState<Record<string, number>>({});
+  // 分支管理：userMsgId → [aiMsgId, …]（所有版本按生成顺序），activeBranch[userMsgId] 当前活跃
+  const [branchGroups, setBranchGroups] = useState<Record<string, string[]>>({});
+  const [activeBranch, setActiveBranch] = useState<Record<string, string>>({});
 
   // ---- 从 store 读取当前项目状态 ----
   const activeProjectId = useAppStore((s) => s.activeProjectId);
@@ -209,78 +209,87 @@ export function ChatPanel() {
     }
   }, []);
 
+  // ---- 分支导航（基于 branchGroups / activeBranch，不再 swap 文本）----
+  const getBranchInfo = useCallback(
+    (msg: ChatMessage, msgs: ChatMessage[]) => {
+      if (msg.role !== "ai") return null;
+      // 找到这条 AI 对应的用户消息 ID
+      const idx = msgs.indexOf(msg);
+      let userMsgId = "";
+      for (let i = idx - 1; i >= 0; i--) {
+        if (msgs[i]?.role === "user") { userMsgId = msgs[i].id; break; }
+      }
+      if (!userMsgId) return null;
+      const branches = branchGroups[userMsgId];
+      if (!branches || branches.length <= 1) return null;
+      const cur = activeBranch[userMsgId] ?? branches[branches.length - 1];
+      const curIdx = branches.indexOf(cur);
+      return {
+        userMsgId,
+        branches,
+        activeId: cur,
+        activeIdx: curIdx,
+        total: branches.length,
+        isActive: msg.id === cur,
+      };
+    },
+    [branchGroups, activeBranch],
+  );
+
   const handleRegenerate = useCallback(
     (aiIndex: number) => {
       if (busy) return;
-      const msgs = useAppStore.getState().chatMessages[activeProjectId ?? ""] ?? [];
+      const store = useAppStore.getState();
+      const msgs = store.chatMessages[activeProjectId ?? ""] ?? [];
       const aiMsg = msgs[aiIndex];
       if (!aiMsg) return;
+
+      let userMsgId = "";
       let userText = "";
       for (let i = aiIndex - 1; i >= 0; i--) {
-        if (msgs[i]?.role === "user") { userText = msgs[i].text; break; }
+        if (msgs[i]?.role === "user") { userText = msgs[i].text; userMsgId = msgs[i].id; break; }
       }
       if (!userText) return;
 
-      // 保存当前版本到历史
-      if (aiMsg.text) {
-        const savedText = aiMsg.text;
-        logger.info("Chat", "存版本 | text:", savedText.slice(0, 40));
-        setVersionHistory(p => {
-          const h = p[aiMsg.id] ?? [];
-          logger.info("Chat", "hLen:", h.length, "→", h.length + 1);
-          return { ...p, [aiMsg.id]: [...h, savedText] };
-        });
-        // cursor 不动（始终显示实时版本），历史记录自动增长
-      }
-      // 清空当前 AI 消息文本，流式写回同一个 id
+      // 新建 AI 消息（插入到原消息之后），流式写入
+      const newAiId = nextId();
+      const insertIdx = aiIndex + 1;
       useAppStore.setState({
         chatMessages: {
-          ...useAppStore.getState().chatMessages,
-          [activeProjectId!]: msgs.map(m => m.id === aiMsg.id ? { ...m, text: "" } : m),
+          ...store.chatMessages,
+          [activeProjectId!]: [
+            ...msgs.slice(0, insertIdx),
+            { id: newAiId, text: "", role: "ai" as const, time: Date.now() },
+            ...msgs.slice(insertIdx),
+          ],
         },
       });
-      streamToTarget(userText, aiMsg.id, false);
+
+      // 注册分支（首次把当前消息也加进去）
+      setBranchGroups(p => {
+        const existing = p[userMsgId] ?? [];
+        const all = existing.includes(aiMsg.id) ? existing : [aiMsg.id, ...existing];
+        return { ...p, [userMsgId]: [...all, newAiId] };
+      });
+      setActiveBranch(p => ({ ...p, [userMsgId]: newAiId }));
+
+      streamToTarget(userText, newAiId, false);
     },
-    [activeProjectId, busy, streamToTarget, versionHistory, versionCursor],
+    [activeProjectId, busy, streamToTarget],
   );
 
-  const swapVersion = useCallback((msgId: string, direction: -1 | 1) => {
-    if (!activeProjectId) return;
-    const cur = versionCursor[msgId] ?? 0;
-    const h = versionHistory[msgId] ?? [];
-    const nc = cur + direction;
-    logger.info("Chat", "dir:", direction, "| cur:", cur, "→ nc:", nc, "| hLen:", h.length, "| h:", [...h]);
-    if (nc < 0 || nc > h.length) { logger.info("Chat", "越界"); return; }
-
-    const msgs = useAppStore.getState().chatMessages[activeProjectId] ?? [];
-    const ai = msgs.find(m => m.id === msgId);
-    if (!ai) return;
-
-    // 取目标位置的文本
-    const oldText = cur === 0
-      ? h[h.length - 1]           // 从实时版进入历史：取最近一条历史
-      : nc === 0
-        ? h[h.length - cur]       // 回到实时版：取之前存入的文本
-        : h[h.length - nc];       // 历史间切换
-    logger.info("Chat", "oldText:", oldText?.slice(0, 40));
-    if (!oldText) { logger.info("Chat", "oldText 为空"); return; }
-
-    const savedCurText = ai.text;
-    // 数组长度永远不变：cur=0 时和 h[last] 互换，其余替换对应位置
-    setVersionHistory(vh => {
-      const l = [...(vh[msgId] ?? [])];
-      l[cur === 0 ? l.length - 1 : l.length - cur] = savedCurText;
-      logger.info("Chat", "h:", [...l], "| len:", l.length);
-      return { ...vh, [msgId]: l };
-    });
-    setVersionCursor(p => ({ ...p, [msgId]: nc }));
-    useAppStore.setState({
-      chatMessages: {
-        ...useAppStore.getState().chatMessages,
-        [activeProjectId]: msgs.map(m => m.id === msgId ? { ...m, text: oldText } : m),
-      },
-    });
-  }, [activeProjectId, versionCursor, versionHistory]);
+  const handleBranchNav = useCallback(
+    (userMsgId: string, direction: -1 | 1) => {
+      const branches = branchGroups[userMsgId];
+      if (!branches || branches.length <= 1) return;
+      const curId = activeBranch[userMsgId] ?? branches[branches.length - 1];
+      const curIdx = branches.indexOf(curId);
+      const newIdx = curIdx + direction;
+      if (newIdx < 0 || newIdx >= branches.length) return;
+      setActiveBranch(p => ({ ...p, [userMsgId]: branches[newIdx] }));
+    },
+    [branchGroups, activeBranch],
+  );
 
   const handleStop = useCallback(() => {
     stopRef.current = true;
@@ -338,7 +347,11 @@ export function ChatPanel() {
         ) : (
           messages
             .filter((msg) => !(typing && msg.role === "ai" && !msg.text))
-            .map((msg, i) => (
+            .map((msg) => {
+              const bi = getBranchInfo(msg, messages);
+              // 非活跃分支 → 隐藏
+              if (bi && !bi.isActive) return null;
+              return (
               <div
                 key={msg.id}
                 className={`chat-bubble-row ${msg.role === "user" ? "is-user" : "is-ai"}`}
@@ -363,7 +376,7 @@ export function ChatPanel() {
                         type="button"
                         className="chat-bubble-action-btn"
                         title="重新生成"
-                        onClick={() => handleRegenerate(i)}
+                        onClick={() => handleRegenerate(messages.indexOf(msg))}
                         disabled={busy}
                       >
                         <RefreshCw className="size-3" />
@@ -376,31 +389,22 @@ export function ChatPanel() {
                       >
                         <Ellipsis className="size-3" />
                       </button>
-                      {dropdownMsgId === msg.id && (
+                      {dropdownMsgId === msg.id && bi && (
                         <div className="chat-bubble-dropdown">
-                          {(() => {
-                            const vh = versionHistory[msg.id];
-                            const vc = versionCursor[msg.id] ?? 0;
-                            const total = (vh?.length ?? 0) + 1;
-                            return (
-                              <>
-                                <button type="button" className="chat-bubble-dropdown-item"
-                                  onClick={() => { swapVersion(msg.id, -1); setDropdownMsgId(null); }}
-                                  disabled={total <= 1 || vc <= 0}>
-                                  <ChevronLeft className="size-3.5" />
-                                  <span>上一个回答</span>
-                                </button>
-                                <button type="button" className="chat-bubble-dropdown-item"
-                                  onClick={() => { swapVersion(msg.id, 1); setDropdownMsgId(null); }}
-                                  disabled={total <= 1 || vc >= total - 1}>
-                                  <ChevronRight className="size-3.5" />
-                                  <span>下一个回答</span>
-                                </button>
-                                <div className="chat-bubble-dropdown-sep" />
-                                <span className="chat-bubble-dropdown-hint">{total - vc}/{total}</span>
-                              </>
-                            );
-                          })()}
+                          <button type="button" className="chat-bubble-dropdown-item"
+                            onClick={() => { handleBranchNav(bi.userMsgId, 1); setDropdownMsgId(null); }}
+                            disabled={bi.activeIdx <= 0}>
+                            <ChevronLeft className="size-3.5" />
+                            <span>上一个回答</span>
+                          </button>
+                          <button type="button" className="chat-bubble-dropdown-item"
+                            onClick={() => { handleBranchNav(bi.userMsgId, -1); setDropdownMsgId(null); }}
+                            disabled={bi.activeIdx >= bi.total - 1}>
+                            <ChevronRight className="size-3.5" />
+                            <span>下一个回答</span>
+                          </button>
+                          <div className="chat-bubble-dropdown-sep" />
+                          <span className="chat-bubble-dropdown-hint">{bi.activeIdx + 1}/{bi.total}</span>
                         </div>
                       )}
                     </div>
@@ -413,7 +417,7 @@ export function ChatPanel() {
                   })}
                 </span>
               </div>
-            ))
+            )})
         )}
         {typing && (
           <div className="chat-bubble-row is-ai">
