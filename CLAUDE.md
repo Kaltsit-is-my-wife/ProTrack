@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Project Tracker — a Tauri v2 desktop application with a React + TypeScript frontend and a Rust backend. Currently in early scaffold stage, transitioning to feature development.
+Project Tracker — a Tauri v2 desktop application with a React + TypeScript frontend and a Rust backend. A project-management tool that visualizes directory structures as an interactive mind map and integrates AI analysis / chat. Version 0.2.0, feature-complete for core flows.
 
 ## Commands
 
@@ -127,7 +127,10 @@ project-tracker/
 │   ├── 09-data-management-principles.md
 │   ├── 10-project-report.md
 │   ├── 11-frontend-principles.md
-│   └── 12-log-principles.md
+│   ├── 12-log-principles.md
+│   ├── 13-constant-principle.md
+│   ├── 14-security-principles.md
+│   └── 15-dual-machine-workflow.md
 │
 ├── index.html
 ├── vite.config.ts
@@ -185,6 +188,43 @@ The `ready.md` file outlines the full product plan. For detailed API references,
 DO：只改外层这一份 .gitignore；优先用无路径前缀模式（如 node_modules/，匹配任意层级罩住内层），需精确定位内层时用 project-tracker/... 相对前缀；改规则先于 git add，已追踪文件需先 git rm -r --cached；提交前用 git check-ignore -v <path> 验证（有输出=已忽略，无输出=危险）。
 
 DON'T：❌ 在内层新建 .gitignore；❌ 写绝对路径；❌ 提交上述敏感/巨型路径；❌ 把 .git 挪到内层或在内层 init；❌ 用无斜杠的 log 宽匹配（应写 log/ 或 *.log）。
+
+## 双机协同开发规范（基于 docs/15-dual-machine-workflow.md）
+
+本仓库在**两台电脑**上协同开发，通过 GitHub 同步：`github.com/Kaltsit-is-my-wife/ProTrack.git`（`origin/main` 单分支）。
+
+### 每次会话开始
+
+```bash
+cd f:/vs_code/project/projectTracker && git pull --rebase
+```
+
+### 每次会话结束 / 切换机器前
+
+必须已 `commit` + `push`（或 `stash`），否则工作留在本机。
+
+### 提交纪律
+
+- ❌ 禁止 `git add .` —— 只 add 具体改动的文件
+- ❌ 禁止两台机器同时改同一文件后各自提交（必然冲突）
+- ❌ 禁止用云盘（OneDrive / 坚果云）同步仓库目录
+
+### 什么不跨机器同步（重要）
+
+| 内容 | 原因 | 第二台机器怎么办 |
+|------|------|-----------------|
+| `%APPDATA%/com.boyua.project-tracker/app-state.json` | **API Key 加密绑定 `USERNAME@COMPUTERNAME`，换机必解密失败** | 在本机设置页重新输入 API Key |
+| `userRoaming/projects.json` | 存绝对路径，且被 gitignore | 重新添加项目 |
+| `userRoaming/.project-tracker/cache/snapshots.json` | 快照绑定绝对路径，不匹配时代码自动清除重建 | 正常行为，无需处理 |
+| `node_modules/`、`src-tauri/target/` | 平台相关二进制 | `pnpm install` / 重新编译 |
+| `references/` | 被 gitignore | 手动重新下载 |
+| `.claude/` | 本机 Claude Code 配置 | 不要拷贝 |
+
+### 环境版本（升级需两端同步）
+
+Node `v24.15.0` / pnpm `11.10.0` / rustc `1.96.1`
+
+⚠️ 项目**未做版本锁定**（无 `.nvmrc`、`rust-toolchain.toml`、`engines`）——两端版本不一致会导致难排查的编译/行为差异。
 
 ## Rust 后端开发规范（基于 docs/08-rust-backend-principles.md，每次写后端必须遵守）
 
